@@ -1,5 +1,3 @@
-#if UNITY_EDITOR
-
 namespace UnityEngine.Rendering
 {
     internal static class ProbeVolumePositioning
@@ -37,6 +35,19 @@ namespace UnityEngine.Rendering
             }
 
             return true;
+        }
+
+        public static bool OBBContains(in ProbeReferenceVolume.Volume obb, Vector3 point)
+        {
+            float lenX2 = obb.X.sqrMagnitude;
+            float lenY2 = obb.Y.sqrMagnitude;
+            float lenZ2 = obb.Z.sqrMagnitude;
+
+            // Project in OBB space
+            point -= obb.corner;
+            point = new Vector3(Vector3.Dot(point, obb.X), Vector3.Dot(point, obb.Y), Vector3.Dot(point, obb.Z));
+
+            return (0.0f < point.x && point.x < lenX2) && (0.0f < point.y && point.y < lenY2) && (0.0f < point.z && point.z < lenZ2);
         }
 
         // Test between a OBB and an AABB. The AABB of the OBB is requested to avoid recalculating it
@@ -120,5 +131,3 @@ namespace UnityEngine.Rendering
         }
     }
 }
-
-#endif

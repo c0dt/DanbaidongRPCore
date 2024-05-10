@@ -43,26 +43,29 @@
 #define TEXTURECUBE_ARRAY(textureName)        TextureCubeArray textureName
 #define TEXTURE3D(textureName)                Texture3D textureName
 
-#define TEXTURE2D_FLOAT(textureName)          Texture2D_float textureName
-#define TEXTURE2D_ARRAY_FLOAT(textureName)    Texture2DArray_float textureName
-#define TEXTURECUBE_FLOAT(textureName)        TextureCube_float textureName
-#define TEXTURECUBE_ARRAY_FLOAT(textureName)  TextureCubeArray_float textureName
-#define TEXTURE3D_FLOAT(textureName)          Texture3D_float textureName
+#define TEXTURE2D_FLOAT(textureName)          Texture2D<float4> textureName
+#define TEXTURE2D_ARRAY_FLOAT(textureName)    Texture2DArray<float4> textureName
+#define TEXTURECUBE_FLOAT(textureName)        TextureCube<float4> textureName
+#define TEXTURECUBE_ARRAY_FLOAT(textureName)  TextureCubeArray<float4> textureName
+#define TEXTURE3D_FLOAT(textureName)          Texture3D<float4> textureName
 
-#define TEXTURE2D_HALF(textureName)           Texture2D_half textureName
-#define TEXTURE2D_ARRAY_HALF(textureName)     Texture2DArray_half textureName
-#define TEXTURECUBE_HALF(textureName)         TextureCube_half textureName
-#define TEXTURECUBE_ARRAY_HALF(textureName)   TextureCubeArray_half textureName
-#define TEXTURE3D_HALF(textureName)           Texture3D_half textureName
+#define TEXTURE2D_HALF(textureName)           Texture2D<half4> textureName
+#define TEXTURE2D_ARRAY_HALF(textureName)     Texture2DArray<half4> textureName
+#define TEXTURECUBE_HALF(textureName)         TextureCube<half4> textureName
+#define TEXTURECUBE_ARRAY_HALF(textureName)   TextureCubeArray<half4> textureName
+#define TEXTURE3D_HALF(textureName)           Texture3D<half4> textureName
 
 #define TEXTURE2D_SHADOW(textureName)         TEXTURE2D(textureName)
 #define TEXTURE2D_ARRAY_SHADOW(textureName)   TEXTURE2D_ARRAY(textureName)
 #define TEXTURECUBE_SHADOW(textureName)       TEXTURECUBE(textureName)
 #define TEXTURECUBE_ARRAY_SHADOW(textureName) TEXTURECUBE_ARRAY(textureName)
 
-#define RW_TEXTURE2D(type, textureName)       RWTexture2D<type> textureName
-#define RW_TEXTURE2D_ARRAY(type, textureName) RWTexture2DArray<type> textureName
-#define RW_TEXTURE3D(type, textureName)       RWTexture3D<type> textureName
+#define TYPED_TEXTURE2D(type, textureName)       Texture2D<type> textureName
+#define TYPED_TEXTURE2D_ARRAY(type, textureName) Texture2DArray<type> textureName
+#define TYPED_TEXTURE3D(type, textureName)       Texture3D<type> textureName
+#define RW_TEXTURE2D(type, textureName)          RWTexture2D<type> textureName
+#define RW_TEXTURE2D_ARRAY(type, textureName)    RWTexture2DArray<type> textureName
+#define RW_TEXTURE3D(type, textureName)          RWTexture3D<type> textureName
 
 #define SAMPLER(samplerName)                  SamplerState samplerName
 #define SAMPLER_CMP(samplerName)              SamplerComparisonState samplerName

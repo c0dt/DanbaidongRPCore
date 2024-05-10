@@ -3,6 +3,8 @@ using UnityEditor;
 #endif
 
 using System;
+using System.Dynamic;
+using UnityEngine.Serialization;
 
 namespace UnityEngine.Rendering
 {
@@ -15,6 +17,16 @@ namespace UnityEngine.Rendering
     {
         [SerializeField]
         private LensFlareDataSRP m_LensFlareData = null;
+
+        enum Version
+        {
+            Initial,
+        }
+
+        #pragma warning disable 414
+        [SerializeField]
+        Version version = Version.Initial;
+        #pragma warning restore 414
 
         /// <summary>
         /// Lens flare asset used on this component
@@ -31,6 +43,7 @@ namespace UnityEngine.Rendering
                 OnValidate();
             }
         }
+
         /// <summary>
         /// Intensity
         /// </summary>
@@ -68,14 +81,26 @@ namespace UnityEngine.Rendering
         /// </summary>
         public bool useOcclusion = false;
         /// <summary>
+        /// Enable Occlusion using Background Cloud (for instance: CloudLayer)
+        /// Please use useFogOpacityOcclusion instead.
+        /// </summary>
+        [Obsolete("Replaced by environmentOcclusion.")]
+        public bool useBackgroundCloudOcclusion = false;
+
+        /// <summary>Enable occlusion from environment effects supported by the render pipeline. This may include opacity from volumetric clouds, background clouds, fog and water.</summary>
+        [FormerlySerializedAs("volumetricCloudOcclusion")]
+        [FormerlySerializedAs("useFogOpacityOcclusion")]
+        public bool environmentOcclusion = false;
+        /// <summary>
+        /// Enable Occlusion with Water
+        /// </summary>
+        [Obsolete("Replaced by environmentOcclusion.")]
+        public bool useWaterOcclusion = false;
+        /// <summary>
         /// Radius around the light used to occlude the flare (value in world space)
         /// </summary>
         [Min(0.0f)]
         public float occlusionRadius = 0.1f;
-        /// <summary>
-        /// Enable Occlusion using Background Cloud (for instance: CloudLayer)
-        /// </summary>
-        public bool useBackgroundCloudOcclusion = false;
         /// <summary>
         /// Random Samples Count used inside the disk with 'occlusionRadius'
         /// </summary>
@@ -97,7 +122,9 @@ namespace UnityEngine.Rendering
         public bool allowOffScreen = false;
         /// <summary>
         /// If volumetricCloudOcclusion is true then use the volumetric cloud (on HDRP only) for the occlusion
+        /// Please use useFogOpacityOcclusion instead.
         /// </summary>
+        [Obsolete("Please use environmentOcclusion instead.")]
         public bool volumetricCloudOcclusion = false;
 
         /// Our default celestial body will have an angular radius of 3.3 degrees. This is an arbitrary number, but must be kept constant
@@ -110,6 +137,11 @@ namespace UnityEngine.Rendering
         public TextureCurve occlusionRemapCurve = new TextureCurve(AnimationCurve.Linear(0.0f, 0.0f, 1.0f, 1.0f), 1.0f, false, new Vector2(0.0f, 1.0f));
 
         /// <summary>
+        /// Light override, change the light which influences the flares including "modulate by light color" and "Attenuation By Light Shape" but not the position.
+        /// </summary>
+        public Light lightOverride = null;
+
+        /// <summary>
         /// Retrieves the projected occlusion radius from a particular celestial in the infinity plane with an angular radius.
         /// This is used for directional lights which require to have consistent occlusion radius regardless of the near/farplane configuration.
         /// </summary>
@@ -119,6 +151,14 @@ namespace UnityEngine.Rendering
         {
             float projectedRadius = (float)Math.Tan(sCelestialAngularRadius) * mainCam.farClipPlane;
             return occlusionRadius * projectedRadius;
+        }
+
+        void Awake()
+        {
+#if UNITY_EDITOR
+            if (!lensFlareData)
+                lensFlareData = AssetDatabase.LoadAssetAtPath<LensFlareDataSRP>("Packages/com.unity.render-pipelines.core/Runtime/RenderPipelineResources/Default Lens Flare (SRP).asset");
+#endif
         }
 
         /// <summary>
@@ -155,6 +195,11 @@ namespace UnityEngine.Rendering
             }
         }
 
+        private void OnDestroy()
+        {
+            occlusionRemapCurve.Release();
+        }
+
 #if UNITY_EDITOR
         private float sDebugClippingSafePercentage = 0.9f; //for debug gizmo, only push 90% further so we avoid clipping of debug lines.
         void OnDrawGizmosSelected()
@@ -186,7 +231,6 @@ namespace UnityEngine.Rendering
                 Handles.color = previousH;
             }
         }
-
 #endif
     }
 }

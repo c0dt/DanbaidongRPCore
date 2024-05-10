@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEditor.AnimatedValues;
+using UnityEditor.Callbacks;
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.Rendering;
@@ -16,7 +17,7 @@ namespace UnityEditor.Rendering
     /// component this drawer is for.
     /// </summary>
     /// <example>
-    /// Below is an example of a custom <see cref="VolumeComponent"/>:
+    /// <para>Below is an example of a custom <see cref="VolumeComponent"/>:</para>
     /// <code>
     /// using UnityEngine.Rendering;
     ///
@@ -26,7 +27,7 @@ namespace UnityEditor.Rendering
     ///     public ClampedFloatParameter intensity = new ClampedFloatParameter(0f, 0f, 1f);
     /// }
     /// </code>
-    /// And its associated editor:
+    /// <para>And its associated editor:</para>
     /// <code>
     /// using UnityEditor.Rendering;
     ///
@@ -56,6 +57,8 @@ namespace UnityEditor.Rendering
 
         EditorPrefBool m_EditorPrefBool;
 
+        internal string categoryTitle { get; set; }
+
         /// <summary>
         /// If the editor for this <see cref="VolumeComponent"/> is expanded or not in the inspector
         /// </summary>
@@ -65,44 +68,16 @@ namespace UnityEditor.Rendering
             set => m_EditorPrefBool.value = value;
         }
 
-        internal Type[] m_PipelineTypes;
+        internal bool visible { get; private set; }
 
-        internal Type[] pipelineTypes
+        static class Styles
         {
-            get
-            {
-                if (m_PipelineTypes == null)
-                {
-                    var supportedOn = volumeComponent.GetType().GetCustomAttribute<VolumeComponentMenuForRenderPipeline>();
-                    if(supportedOn != null)
-                        m_PipelineTypes = supportedOn.pipelineTypes;
-                    else
-                        m_PipelineTypes = Array.Empty<Type>();
-                }
+            public static readonly GUIContent k_OverrideSettingText = EditorGUIUtility.TrTextContent("", "Override this setting for this volume.");
 
-                return m_PipelineTypes;
-            }
-        }
+            public static readonly GUIContent k_AllText =
+                EditorGUIUtility.TrTextContent("ALL", "Toggle all overrides on. To maximize performances you should only toggle overrides that you actually need.");
 
-        internal bool visible
-        {
-            get
-            {
-                if (RenderPipelineManager.currentPipeline == null)
-                    return false;
-
-                if (!pipelineTypes.Any())
-                    return true;
-
-                return pipelineTypes.Contains(RenderPipelineManager.currentPipeline.GetType());
-            }
-        }
-
-        class Styles
-        {
-            public static GUIContent overrideSettingText { get; } = EditorGUIUtility.TrTextContent("", "Override this setting for this volume.");
-            public static GUIContent allText { get; } = EditorGUIUtility.TrTextContent("ALL", "Toggle all overrides on. To maximize performances you should only toggle overrides that you actually need.");
-            public static GUIContent noneText { get; } = EditorGUIUtility.TrTextContent("NONE", "Toggle all overrides off.");
+            public static readonly GUIContent k_NoneText = EditorGUIUtility.TrTextContent("NONE", "Toggle all overrides off.");
 
             public static string toggleAllText { get; } = L10n.Tr("Toggle All");
 
@@ -111,12 +86,13 @@ namespace UnityEditor.Rendering
         }
 
         Vector2? m_OverrideToggleSize;
+
         internal Vector2 overrideToggleSize
         {
             get
             {
                 if (!m_OverrideToggleSize.HasValue)
-                    m_OverrideToggleSize = CoreEditorStyles.smallTickbox.CalcSize(Styles.overrideSettingText);
+                    m_OverrideToggleSize = CoreEditorStyles.smallTickbox.CalcSize(Styles.k_OverrideSettingText);
                 return m_OverrideToggleSize.Value;
             }
         }
@@ -213,14 +189,31 @@ namespace UnityEditor.Rendering
             set => m_Inspector = value;
         }
 
+        internal void SetVolume(Volume v)
+        {
+            volume = v;
+        }
+
         /// <summary>
-        /// Obtains the <see cref="Volume"/> that is being edited from this volume component
+        /// Obtains the <see cref="Volume"/> that is being edited if editing a scene volume, otherwise null.
         /// </summary>
-        protected Volume volume => inspector?.target as Volume;
+        protected Volume volume { get; private set; }
+
+        internal void SetVolumeProfile(VolumeProfile p)
+        {
+            volumeProfile = p;
+        }
+
+        /// <summary>
+        /// Obtains the <see cref="VolumeProfile"/> that is being edited.
+        /// </summary>
+        VolumeProfile volumeProfile { get; set; }
 
         List<(GUIContent displayName, int displayOrder, SerializedDataParameter param)> m_Parameters;
 
         static Dictionary<Type, VolumeParameterDrawer> s_ParameterDrawers;
+        SupportedOnRenderPipelineAttribute m_SupportedOnRenderPipelineAttribute;
+        Type[] m_LegacyPipelineTypes;
 
         static VolumeComponentEditor()
         {
@@ -228,7 +221,7 @@ namespace UnityEditor.Rendering
             ReloadDecoratorTypes();
         }
 
-        [Callbacks.DidReloadScripts]
+        [DidReloadScripts]
         static void OnEditorReload()
         {
             ReloadDecoratorTypes();
@@ -238,16 +231,19 @@ namespace UnityEditor.Rendering
         {
             s_ParameterDrawers.Clear();
 
-            // Look for all the valid parameter drawers
-            var types = CoreUtils.GetAllTypesDerivedFrom<VolumeParameterDrawer>()
-                .Where(t => t.IsDefined(typeof(VolumeParameterDrawerAttribute), false) && !t.IsAbstract);
-
-            // Store them
-            foreach (var type in types)
+            foreach (var type in TypeCache.GetTypesDerivedFrom<VolumeParameterDrawer>())
             {
-                var attr = (VolumeParameterDrawerAttribute)type.GetCustomAttributes(typeof(VolumeParameterDrawerAttribute), false)[0];
-                var decorator = (VolumeParameterDrawer)Activator.CreateInstance(type);
-                s_ParameterDrawers.Add(attr.parameterType, decorator);
+                if (type.IsAbstract)
+                    continue;
+
+                var attr = type.GetCustomAttribute<VolumeParameterDrawerAttribute>(false);
+                if (attr == null)
+                {
+                    Debug.LogWarning($"{type} is missing the attribute {nameof(VolumeParameterDrawerAttribute)}");
+                    continue;
+                }
+
+                s_ParameterDrawers.Add(attr.parameterType, Activator.CreateInstance(type) as VolumeParameterDrawer);
             }
         }
 
@@ -256,9 +252,7 @@ namespace UnityEditor.Rendering
         /// </summary>
         public new void Repaint()
         {
-            inspector?.Repaint();
-
-            // Volume Component Editors can be shown in the ProjectSettings window (default volume profile)
+            // Volume Component Editors can be shown in the Graphics Settings window (default volume profile)
             // This will force a repaint of the whole window, otherwise, additional properties highlight animation does not work properly.
             SettingsService.RepaintAllSettingsWindow();
 
@@ -285,8 +279,15 @@ namespace UnityEditor.Rendering
         {
             activeProperty = serializedObject.FindProperty("active");
 
-            var inspectorKey = inspector != null ? inspector.GetType().Name : string.Empty;
-            m_EditorPrefBool = new EditorPrefBool(k_KeyPrefix + inspectorKey + volumeComponent.GetType().Name, true);
+            string inspectorKey = string.Empty;
+            bool expandedByDefault = true;
+            if (!enableOverrides)
+            {
+                inspectorKey += "default"; // Ensures the default VolumeProfile editor doesn't share expander state with other editors
+                expandedByDefault = false;
+            }
+
+            m_EditorPrefBool = new EditorPrefBool(k_KeyPrefix + inspectorKey + volumeComponent.GetType().Name, expandedByDefault);
 
             InitAdditionalPropertiesPreference();
 
@@ -296,8 +297,45 @@ namespace UnityEditor.Rendering
             };
 
             InitParameters();
-
             OnEnable();
+
+            var volumeComponentType = volumeComponent.GetType();
+            m_SupportedOnRenderPipelineAttribute = volumeComponentType.GetCustomAttribute<SupportedOnRenderPipelineAttribute>();
+
+#pragma warning disable CS0618
+            var supportedOn = volumeComponentType.GetCustomAttribute<VolumeComponentMenuForRenderPipeline>();
+            m_LegacyPipelineTypes = supportedOn != null ? supportedOn.pipelineTypes : Array.Empty<Type>();
+#pragma warning restore CS0618
+
+            EditorApplication.contextualPropertyMenu += OnPropertyContextMenu;
+        }
+
+        void OnDestroy()
+        {
+            EditorApplication.contextualPropertyMenu -= OnPropertyContextMenu;
+        }
+
+        internal void DetermineVisibility(Type renderPipelineAssetType, Type renderPipelineType)
+        {
+            if (renderPipelineAssetType == null)
+            {
+                visible = false;
+                return;
+            }
+
+            if (m_SupportedOnRenderPipelineAttribute != null)
+            {
+                visible = m_SupportedOnRenderPipelineAttribute.GetSupportedMode(renderPipelineAssetType) != SupportedOnRenderPipelineAttribute.SupportedMode.Unsupported;
+                return;
+            }
+
+            if (renderPipelineType != null && m_LegacyPipelineTypes.Length > 0)
+            {
+                visible = m_LegacyPipelineTypes.Contains(renderPipelineType);
+                return;
+            }
+
+            visible = true;
         }
 
         void InitParameters()
@@ -320,12 +358,10 @@ namespace UnityEditor.Rendering
                     if ((field.GetCustomAttributes(typeof(HideInInspector), false).Length == 0) &&
                         ((field.GetCustomAttributes(typeof(SerializeField), false).Length > 0) ||
                          (field.IsPublic && field.GetCustomAttributes(typeof(NonSerializedAttribute), false).Length == 0)))
-                        infos.Add((field, prop == null ?
-                            serializedObject.FindProperty(field.Name) : prop.FindPropertyRelative(field.Name)));
+                        infos.Add((field, prop == null ? serializedObject.FindProperty(field.Name) : prop.FindPropertyRelative(field.Name)));
                 }
                 else if (!field.FieldType.IsArray && field.FieldType.IsClass)
-                    GetFields(field.GetValue(o), infos, prop == null ?
-                        serializedObject.FindProperty(field.Name) : prop.FindPropertyRelative(field.Name));
+                    GetFields(field.GetValue(o), infos, prop == null ? serializedObject.FindProperty(field.Name) : prop.FindPropertyRelative(field.Name));
             }
         }
 
@@ -345,20 +381,20 @@ namespace UnityEditor.Rendering
 
             m_Parameters = fields
                 .Select(t =>
-            {
-                var name = "";
-                var order = 0;
-                var (fieldInfo, serializedProperty) = t;
-                var attr = (DisplayInfoAttribute[])fieldInfo.GetCustomAttributes(typeof(DisplayInfoAttribute), true);
-                if (attr.Length != 0)
                 {
-                    name = attr[0].name;
-                    order = attr[0].order;
-                }
+                    var name = "";
+                    var order = 0;
+                    var (fieldInfo, serializedProperty) = t;
+                    var attr = (DisplayInfoAttribute[])fieldInfo.GetCustomAttributes(typeof(DisplayInfoAttribute), true);
+                    if (attr.Length != 0)
+                    {
+                        name = attr[0].name;
+                        order = attr[0].order;
+                    }
 
-                var parameter = new SerializedDataParameter(t.Item2);
-                return (EditorGUIUtility.TrTextContent(name), order, parameter);
-            })
+                    var parameter = new SerializedDataParameter(t.Item2);
+                    return (EditorGUIUtility.TrTextContent(name), order, parameter);
+                })
                 .OrderBy(t => t.order)
                 .ToList();
         }
@@ -370,16 +406,62 @@ namespace UnityEditor.Rendering
         {
         }
 
-        internal void OnInternalInspectorGUI()
+        internal void AddDefaultProfileContextMenuEntries(
+            GenericMenu menu,
+            VolumeProfile defaultProfile,
+            GenericMenu.MenuFunction copyAction)
         {
+            // Host can be either VolumeProfileEditor or VolumeEditor
+            var profile = volume
+                ? volume.HasInstantiatedProfile() ? volume.profile : volume.sharedProfile
+                : volumeProfile;
+
+            if (defaultProfile != null &&
+                profile != null &&
+                defaultProfile != profile)
+            {
+                menu.AddItem(EditorGUIUtility.TrTextContent($"Show Default Volume Profile"), false,
+                    () => Selection.activeObject = defaultProfile);
+                menu.AddItem(EditorGUIUtility.TrTextContent($"Apply Values to Default Volume Profile"), false, copyAction);
+            }
+        }
+
+        void OnPropertyContextMenu(GenericMenu menu, SerializedProperty property)
+        {
+            if (property.serializedObject.targetObject != target)
+                return;
+
+            var targetComponent = property.serializedObject.targetObject as VolumeComponent;
+
+            AddDefaultProfileContextMenuEntries(menu, VolumeManager.instance.globalDefaultProfile,
+                () => VolumeProfileUtils.AssignValuesToProfile(VolumeManager.instance.globalDefaultProfile, targetComponent, property));
+        }
+
+        /// <summary>
+        /// Unity calls this method after drawing the header for each VolumeComponentEditor
+        /// </summary>
+        protected virtual void OnBeforeInspectorGUI()
+        {
+        }
+
+        internal bool OnInternalInspectorGUI()
+        {
+            if (serializedObject == null || serializedObject.targetObject == null)
+                return false;
+
             serializedObject.Update();
             using (new EditorGUILayout.VerticalScope())
             {
-                TopRowFields();
+                OnBeforeInspectorGUI();
+                if (enableOverrides)
+                    TopRowFields();
+                else
+                    GUILayout.Space(4);
                 OnInspectorGUI();
                 EditorGUILayout.Space();
             }
-            serializedObject.ApplyModifiedProperties();
+
+            return serializedObject.ApplyModifiedProperties();
         }
 
         /// <summary>
@@ -409,15 +491,11 @@ namespace UnityEditor.Rendering
         /// <returns>A label to display in the component header.</returns>
         public virtual GUIContent GetDisplayTitle()
         {
-            var targetType = target.GetType();
-            string title = string.IsNullOrEmpty(volumeComponent.displayName) ? ObjectNames.NicifyVariableName(volumeComponent.GetType().Name) : volumeComponent.displayName;
-            string tooltip = targetType.GetCustomAttribute(typeof(VolumeComponentMenuForRenderPipeline), false) is VolumeComponentMenuForRenderPipeline supportedOn
-                ? string.Join(", ", supportedOn.pipelineTypes.Select(t => ObjectNames.NicifyVariableName(t.Name)))
-                : string.Empty;
-            return EditorGUIUtility.TrTextContent(title, tooltip);
+            var title = string.IsNullOrEmpty(volumeComponent.displayName) ? ObjectNames.NicifyVariableName(volumeComponent.GetType().Name) : volumeComponent.displayName;
+            return EditorGUIUtility.TrTextContent(title, string.Empty);
         }
 
-        void AddToogleState(GUIContent content, bool state)
+        void AddToggleState(GUIContent content, bool state)
         {
             bool allOverridesSameState = AreOverridesTo(state);
             if (GUILayout.Toggle(allOverridesSameState, content, CoreEditorStyles.miniLabelButton, GUILayout.ExpandWidth(false)) && !allOverridesSameState)
@@ -428,8 +506,8 @@ namespace UnityEditor.Rendering
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                AddToogleState(Styles.allText, true);
-                AddToogleState(Styles.noneText, false);
+                AddToggleState(Styles.k_AllText, true);
+                AddToggleState(Styles.k_NoneText, false);
             }
         }
 
@@ -447,6 +525,7 @@ namespace UnityEditor.Rendering
                 if (m_VolumeNotAdditionalParameters[i].overrideState != state)
                     return false;
             }
+
             return true;
         }
 
@@ -473,6 +552,7 @@ namespace UnityEditor.Rendering
                 if (volumeComponent.parameterList[i].overrideState != state)
                     return false;
             }
+
             return true;
         }
 
@@ -489,7 +569,7 @@ namespace UnityEditor.Rendering
         /// </summary>
         /// <param name="property">A serialized property holding a <see cref="VolumeParameter{T}"/>
         /// </param>
-        /// <returns></returns>
+        /// <returns>A <see cref="SerializedDataParameter"/> that encapsulates the provided serialized property.</returns>
         protected SerializedDataParameter Unpack(SerializedProperty property)
         {
             Assert.IsNotNull(property);
@@ -522,8 +602,9 @@ namespace UnityEditor.Rendering
                 s_HeadersGuiContents.Add(header, content);
             }
 
-            var rect = EditorGUI.IndentedRect(EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight));
-            EditorGUI.LabelField(rect, content, EditorStyles.miniLabel);
+            EditorGUILayout.Space(4);
+            var rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
+            EditorGUI.LabelField(rect, content, EditorStyles.boldLabel);
         }
 
         /// <summary>
@@ -531,7 +612,7 @@ namespace UnityEditor.Rendering
         /// </summary>
         /// <param name="property">The property to obtain the attributes and handle the decorators</param>
         /// <param name="title">A custom label and/or tooltip that might be updated by <see cref="TooltipAttribute"/> and/or by <see cref="InspectorNameAttribute"/></param>
-        void HandleDecorators(SerializedDataParameter property, GUIContent title)
+        internal void HandleDecorators(SerializedDataParameter property, GUIContent title)
         {
             foreach (var attr in property.attributes)
             {
@@ -569,6 +650,7 @@ namespace UnityEditor.Rendering
                 if (attr is VolumeComponent.Indent indent)
                     return indent.relativeAmount;
             }
+
             return 0;
         }
 
@@ -652,12 +734,34 @@ namespace UnityEditor.Rendering
                         first = false;
                     }
                 }
+
                 property.value.isExpanded = expanded;
             }
 
             if (isAdditionalProperty)
                 EndAdditionalPropertiesScope();
             return true;
+        }
+
+        /// <summary>
+        /// Draw a Color Field but convert the color to gamma space before displaying it in the shader.
+        /// Using SetColor on a material does the conversion, but setting the color as vector3 in a constant buffer doesn't
+        /// So we have to do it manually, doing it in the UI avoids having to do a migration step for existing fields
+        /// </summary>
+        /// <param name="property">The color property</param>
+        protected void ColorFieldLinear(SerializedDataParameter property)
+        {
+            var title = EditorGUIUtility.TrTextContent(property.displayName,
+                property.GetAttribute<TooltipAttribute>()?.tooltip);
+
+            using (var scope = new OverridablePropertyScope(property, title, this))
+            {
+                if (!scope.displayed)
+                    return;
+
+                // Standard Unity drawer
+                CoreEditorUtils.ColorFieldLinear(property.value, title);
+            }
         }
 
         /// <summary>
@@ -668,13 +772,14 @@ namespace UnityEditor.Rendering
         {
             // Create a rect the height + vspacing of the property that is being overriden
             float height = EditorGUI.GetPropertyHeight(property.value) + EditorGUIUtility.standardVerticalSpacing;
-            var overrideRect = GUILayoutUtility.GetRect(Styles.allText, CoreEditorStyles.miniLabelButton, GUILayout.Height(height), GUILayout.Width(Styles.overrideCheckboxWidth + Styles.overrideCheckboxOffset), GUILayout.ExpandWidth(false));
+            var overrideRect = GUILayoutUtility.GetRect(Styles.k_AllText, CoreEditorStyles.miniLabelButton, GUILayout.Height(height),
+                GUILayout.Width(Styles.overrideCheckboxWidth + Styles.overrideCheckboxOffset), GUILayout.ExpandWidth(false));
 
             // also center vertically the checkbox
             overrideRect.yMin += height * 0.5f - overrideToggleSize.y * 0.5f;
             overrideRect.xMin += Styles.overrideCheckboxOffset;
 
-            property.overrideState.boolValue = GUI.Toggle(overrideRect, property.overrideState.boolValue, Styles.overrideSettingText, CoreEditorStyles.smallTickbox);
+            property.overrideState.boolValue = GUI.Toggle(overrideRect, property.overrideState.boolValue, Styles.k_OverrideSettingText, CoreEditorStyles.smallTickbox);
         }
 
         /// <summary>
@@ -694,10 +799,12 @@ namespace UnityEditor.Rendering
             IDisposable indentScope;
             internal bool haveCustomOverrideCheckbox { get; private set; }
             internal VolumeParameterDrawer drawer { get; private set; }
+
             /// <summary>
             /// Either the content property will be displayed or not (can varry with additional property settings)
             /// </summary>
             public bool displayed { get; private set; }
+
             /// <summary>
             /// The title modified regarding attribute used on the field
             /// </summary>
@@ -756,20 +863,26 @@ namespace UnityEditor.Rendering
 
                 //never draw override for embedded class/struct
                 haveCustomOverrideCheckbox = (displayed && !(drawer?.IsAutoProperty() ?? true))
-                    || VolumeParameter.IsObjectParameter(property.referenceType);
+                                             || VolumeParameter.IsObjectParameter(property.referenceType);
 
                 if (displayed)
                 {
                     editor.HandleDecorators(property, label);
 
                     int relativeIndentation = editor.HandleRelativeIndentation(property);
-                    if (relativeIndentation != 0)
-                        indentScope = new IndentLevelScope(relativeIndentation * 15);
+
+                    int indent = relativeIndentation * 15;
+                    if (haveCustomOverrideCheckbox)
+                        indent += 15;
+
+                    if (indent != 0)
+                        indentScope = new IndentLevelScope(indent);
 
                     if (!haveCustomOverrideCheckbox)
                     {
                         EditorGUILayout.BeginHorizontal();
-                        editor.DrawOverrideCheckbox(property);
+                        if (editor.enableOverrides)
+                            editor.DrawOverrideCheckbox(property);
 
                         disabledScope = new EditorGUI.DisabledScope(!property.overrideState.boolValue);
                     }
@@ -828,5 +941,10 @@ namespace UnityEditor.Rendering
                 GUILayout.EndHorizontal();
             }
         }
+
+        /// <summary>
+        /// Whether to draw the UI elements related to overrides.
+        /// </summary>
+        public bool enableOverrides { get; set; } = true;
     }
 }

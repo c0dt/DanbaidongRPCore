@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEditor.ProjectWindowCallback;
 using System.IO;
@@ -11,12 +12,12 @@ namespace UnityEditor.Rendering
     /// </summary>
     public static class VolumeProfileFactory
     {
-        [MenuItem("Assets/Create/Volume Profile", priority = 201)]
+        [MenuItem("Assets/Create/Rendering/Volume Profile", priority = 201)]
         static void CreateVolumeProfile()
         {
             ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
                 0,
-                ScriptableObject.CreateInstance<DoCreatePostProcessProfile>(),
+                ScriptableObject.CreateInstance<CreateVolumeProfileAction>(),
                 "New Volume Profile.asset",
                 null,
                 null
@@ -24,15 +25,56 @@ namespace UnityEditor.Rendering
         }
 
         /// <summary>
+        /// Asks for editor user input for the asset name, creates a <see cref="VolumeProfile"/> Asset, saves it at the
+        /// given path and invokes the callback.
+        /// </summary>
+        /// <param name="fullPath">The path to save the asset to.</param>
+        /// <param name="callback">Callback to invoke after the asset has been created.</param>
+        public static void CreateVolumeProfileWithCallback(string fullPath, Action<VolumeProfile> callback)
+        {
+            var assetCreator = ScriptableObject.CreateInstance<CreateVolumeProfileWithCallbackAction>();
+            assetCreator.callback = callback;
+            CoreUtils.EnsureFolderTreeInAssetFilePath(fullPath);
+
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
+                assetCreator.GetInstanceID(),
+                assetCreator,
+                fullPath,
+                null,
+                null);
+        }
+
+        /// <summary>
         /// Creates a <see cref="VolumeProfile"/> Asset and saves it at the given path.
         /// </summary>
         /// <param name="path">The path to save the Asset to, relative to the Project folder.</param>
         /// <returns>The newly created <see cref="VolumeProfile"/>.</returns>
-        public static VolumeProfile CreateVolumeProfileAtPath(string path)
+        public static VolumeProfile CreateVolumeProfileAtPath(string path) => CreateVolumeProfileAtPath(path, null);
+
+        /// <summary>
+        /// Creates a <see cref="VolumeProfile"/> Asset and saves it at the given path.
+        /// </summary>
+        /// <param name="path">The path to save the Asset to, relative to the Project folder.</param>
+        /// <param name="dataSource">Another `VolumeProfile` that Unity uses as a data source.</param>
+        /// <returns>The newly created <see cref="VolumeProfile"/>.</returns>
+        public static VolumeProfile CreateVolumeProfileAtPath(string path, VolumeProfile dataSource)
         {
             var profile = ScriptableObject.CreateInstance<VolumeProfile>();
             profile.name = Path.GetFileName(path);
             AssetDatabase.CreateAsset(profile, path);
+
+            if (dataSource != null)
+            {
+                foreach (var sourceComponent in dataSource.components)
+                {
+                    var profileComponent = profile.Add(sourceComponent.GetType());
+                    for (int i = 0; i < sourceComponent.parameters.Count; i++)
+                        profileComponent.parameters[i].overrideState = sourceComponent.parameters[i].overrideState;
+                    VolumeProfileUtils.CopyValuesToComponent(sourceComponent, profileComponent, true);
+                    AssetDatabase.AddObjectToAsset(profileComponent, profile);
+                }
+            }
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             return profile;
@@ -58,7 +100,7 @@ namespace UnityEditor.Rendering
         /// <param name="saveAsset">Specifies whether to save the Profile Asset or not. This is useful when you need to
         /// create several components in a row and only want to save the Profile Asset after adding the last one,
         /// because saving Assets to disk can be slow.</param>
-        /// <returns></returns>
+        /// <returns>The newly created component of type <typeparamref name="T"/>.</returns>
         public static T CreateVolumeComponent<T>(VolumeProfile profile, bool overrides = false, bool saveAsset = true)
             where T : VolumeComponent
         {
@@ -76,12 +118,24 @@ namespace UnityEditor.Rendering
         }
     }
 
-    class DoCreatePostProcessProfile : EndNameEditAction
+    class CreateVolumeProfileAction : EndNameEditAction
     {
         public override void Action(int instanceId, string pathName, string resourceFile)
         {
             var profile = VolumeProfileFactory.CreateVolumeProfileAtPath(pathName);
             ProjectWindowUtil.ShowCreatedAsset(profile);
         }
+    }
+
+    class CreateVolumeProfileWithCallbackAction : EndNameEditAction
+    {
+        public override void Action(int instanceId, string pathName, string resourceFile)
+        {
+            var profile = VolumeProfileFactory.CreateVolumeProfileAtPath(pathName);
+            ProjectWindowUtil.ShowCreatedAsset(profile);
+            callback?.Invoke(profile);
+        }
+
+        internal Action<VolumeProfile> callback { get; set; }
     }
 }

@@ -1,12 +1,11 @@
 using UnityEngine.Rendering;
 
-namespace UnityEngine.Experimental.Rendering.RenderGraphModule
+namespace UnityEngine.Rendering.RenderGraphModule
 {
     internal enum RenderGraphProfileId
     {
         CompileRenderGraph,
         ExecuteRenderGraph,
-        RenderGraphClear,
-        RenderGraphClearDebug,
+        ComputeHashRenderGraph,
     }
 }

@@ -71,20 +71,32 @@ float4 _FsrEasuConstants3;
 #if FSR_EASU_H
 AH4 FsrEasuRH(AF2 p)
 {
+    #ifdef FSR_CLAMP_COORD
+        p = FSR_CLAMP_COORD(p);
+    #endif
+
     return (AH4)GATHER_RED_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
 AH4 FsrEasuGH(AF2 p)
 {
+    #ifdef FSR_CLAMP_COORD
+        p = FSR_CLAMP_COORD(p);
+    #endif
+
     return (AH4)GATHER_GREEN_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
 AH4 FsrEasuBH(AF2 p)
 {
+    #ifdef FSR_CLAMP_COORD
+        p = FSR_CLAMP_COORD(p);
+    #endif
+
     return (AH4)GATHER_BLUE_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
 
 void FsrEasuProcessInput(inout AH4 r, inout AH4 g, inout AH4 b)
 {
-    // HDRP only. URP use an upscaling pass before EASU pass where this operation can be done.
+// HDRP only. URP use an upscaling pass before EASU pass where this operation can be done.
 #ifdef HDR_INPUT
     AH3 s0 = FastTonemap(AH3(r.x, g.x, b.x) * FSR_EASU_ONE_OVER_PAPER_WHITE);
     AH3 s1 = FastTonemap(AH3(r.y, g.y, b.y) * FSR_EASU_ONE_OVER_PAPER_WHITE);
@@ -99,14 +111,26 @@ void FsrEasuProcessInput(inout AH4 r, inout AH4 g, inout AH4 b)
 #else
 AF4 FsrEasuRF(AF2 p)
 {
+    #ifdef FSR_CLAMP_COORD
+        p = FSR_CLAMP_COORD(p);
+    #endif
+
     return GATHER_RED_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
 AF4 FsrEasuGF(AF2 p)
 {
+    #ifdef FSR_CLAMP_COORD
+        p = FSR_CLAMP_COORD(p);
+    #endif
+
     return GATHER_GREEN_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
 AF4 FsrEasuBF(AF2 p)
 {
+    #ifdef FSR_CLAMP_COORD
+        p = FSR_CLAMP_COORD(p);
+    #endif
+
     return GATHER_BLUE_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
 

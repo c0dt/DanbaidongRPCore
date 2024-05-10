@@ -2,7 +2,6 @@ using NUnit.Framework;
 using System;
 using System.IO;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
 
@@ -10,24 +9,20 @@ namespace UnityEditor.Rendering.Tests.ShaderStripping
 {
     class BuildReportTestScope : IDisposable
     {
-        private ShaderStrippingReportScope m_Scope;
-
         public BuildReportTestScope()
         {
-            ShaderStrippingReportScope.s_DefaultExport = true;
-            m_Scope = new ShaderStrippingReportScope();
-            m_Scope.OnPreprocessBuild(default);
+            Rendering.ShaderStripping.s_DefaultExport = true;
+            Rendering.ShaderStripping.ReportBegin();
         }
 
         void IDisposable.Dispose()
         {
-            m_Scope.OnPostprocessBuild(default);
-            m_Scope = null;
-            ShaderStrippingReportScope.s_DefaultExport = false;
+            Rendering.ShaderStripping.ReportEnd();
+            Rendering.ShaderStripping.s_DefaultExport = false;
         }
     }
 
-    public class ShaderStrippingReportTest
+    class ShaderStrippingReportTests
     {
         [UnitySetUp]
         public void GlobalSetUp()
@@ -79,7 +74,7 @@ namespace UnityEditor.Rendering.Tests.ShaderStripping
         [Test, TestCaseSource(nameof(s_StrippedShaderInputs))]
         public void JSONOutput(Shader[] shaders, uint steps, float variantsOutMultiplier)
         {
-            string fileName = $"{string.Join("_", shaders.Select(s => s.name))}_{steps}_{variantsOutMultiplier}.json".Replace("/", "_");
+            string fileName = $"{string.Join("_", shaders.Select(s => s.name))}_{steps}_{variantsOutMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture)}.json".Replace("/", "_");
             string path = Path.GetFullPath(Path.Combine(k_ShaderResultsDirectory, fileName));
 
             PerformFakeReport(shaders, steps, variantsOutMultiplier);

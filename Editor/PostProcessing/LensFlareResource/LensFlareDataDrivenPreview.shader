@@ -7,10 +7,10 @@ Shader "Hidden/Core/LensFlareDataDrivenPreview"
 
     SubShader
     {
-        // Image
+        // Not Inverted
         Pass
         {
-            Name "ForwardUnlit"
+            Name "FlarePreviewNotInverted"
             Tags{ "LightMode" = "Forward"  "RenderQueue" = "Transparent" }
 
             Blend One One
@@ -23,7 +23,6 @@ Shader "Hidden/Core/LensFlareDataDrivenPreview"
             #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
-            #pragma exclude_renderers gles
 
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 
@@ -32,10 +31,10 @@ Shader "Hidden/Core/LensFlareDataDrivenPreview"
 
             ENDHLSL
         }
-        // Circle
+        // Inverse
         Pass
         {
-            Name "ForwardUnlit"
+            Name "FlarePreviewInverted"
             Tags{ "LightMode" = "Forward"  "RenderQueue" = "Transparent" }
 
             Blend One One
@@ -48,91 +47,10 @@ Shader "Hidden/Core/LensFlareDataDrivenPreview"
             #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
-            #pragma exclude_renderers gles
 
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 
             #define FLARE_PREVIEW
-            #define FLARE_CIRCLE
-            #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/LensFlareCommon.hlsl"
-
-            ENDHLSL
-        }
-        // Polygon
-        Pass
-        {
-            Name "ForwardUnlit"
-            Tags{ "LightMode" = "Forward"  "RenderQueue" = "Transparent" }
-
-            Blend One One
-            ZWrite Off
-            Cull Off
-            ZTest Always
-
-            HLSLPROGRAM
-
-            #pragma target 3.0
-            #pragma vertex vert
-            #pragma fragment frag
-            #pragma exclude_renderers gles
-
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
-            #define FLARE_PREVIEW
-            #define FLARE_POLYGON
-            #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/LensFlareCommon.hlsl"
-
-            ENDHLSL
-        }
-        // Circle Inverse
-        Pass
-        {
-            Name "ForwardUnlit"
-            Tags{ "LightMode" = "Forward"  "RenderQueue" = "Transparent" }
-
-            Blend One One
-            ZWrite Off
-            Cull Off
-            ZTest Always
-
-            HLSLPROGRAM
-
-            #pragma target 3.0
-            #pragma vertex vert
-            #pragma fragment frag
-            #pragma exclude_renderers gles
-
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
-            #define FLARE_PREVIEW
-            #define FLARE_CIRCLE
-            #define FLARE_INVERSE_SDF
-            #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/LensFlareCommon.hlsl"
-
-            ENDHLSL
-        }
-        // Polygon Inverse
-        Pass
-        {
-            Name "ForwardUnlit"
-            Tags{ "LightMode" = "Forward"  "RenderQueue" = "Transparent" }
-
-            Blend One One
-            ZWrite Off
-            Cull Off
-            ZTest Always
-
-            HLSLPROGRAM
-
-            #pragma target 3.0
-            #pragma vertex vert
-            #pragma fragment frag
-            #pragma exclude_renderers gles
-
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
-            #define FLARE_PREVIEW
-            #define FLARE_POLYGON
             #define FLARE_INVERSE_SDF
             #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/LensFlareCommon.hlsl"
 

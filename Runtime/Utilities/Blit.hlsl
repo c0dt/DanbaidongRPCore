@@ -2,36 +2,33 @@
 #define UNITY_CORE_BLIT_INCLUDED
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/GlobalSamplers.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"
 
+#ifdef USE_FULL_PRECISION_BLIT_TEXTURE
+TEXTURE2D_X_FLOAT(_BlitTexture);
+#else
 TEXTURE2D_X(_BlitTexture);
+#endif
 TEXTURECUBE(_BlitCubeTexture);
 
 uniform float4 _BlitScaleBias;
 uniform float4 _BlitScaleBiasRt;
+uniform float4 _BlitTexture_TexelSize;
 uniform float _BlitMipLevel;
 uniform float2 _BlitTextureSize;
 uniform uint _BlitPaddingSize;
 uniform int _BlitTexArraySlice;
 uniform float4 _BlitDecodeInstructions;
 
-#if SHADER_API_GLES
-struct Attributes
-{
-    float4 positionOS       : POSITION;
-    float2 uv               : TEXCOORD0;
-    UNITY_VERTEX_INPUT_INSTANCE_ID
-};
-#else
 struct Attributes
 {
     uint vertexID : SV_VertexID;
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
-#endif
 
 struct Varyings
 {
@@ -46,16 +43,12 @@ Varyings Vert(Attributes input)
     UNITY_SETUP_INSTANCE_ID(input);
     UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
-#if SHADER_API_GLES
-    float4 pos = input.positionOS;
-    float2 uv  = input.uv;
-#else
     float4 pos = GetFullScreenTriangleVertexPosition(input.vertexID);
     float2 uv  = GetFullScreenTriangleTexCoord(input.vertexID);
-#endif
 
     output.positionCS = pos;
-    output.texcoord   = uv * _BlitScaleBias.xy + _BlitScaleBias.zw;
+    output.texcoord   = DYNAMIC_SCALING_APPLY_SCALEBIAS(uv);
+
     return output;
 }
 
@@ -65,17 +58,12 @@ Varyings VertQuad(Attributes input)
     UNITY_SETUP_INSTANCE_ID(input);
     UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
-#if SHADER_API_GLES
-    float4 pos = input.positionOS;
-    float2 uv  = input.uv;
-#else
     float4 pos = GetQuadVertexPosition(input.vertexID);
     float2 uv  = GetQuadTexCoord(input.vertexID);
-#endif
 
     output.positionCS    = pos * float4(_BlitScaleBiasRt.x, _BlitScaleBiasRt.y, 1, 1) + float4(_BlitScaleBiasRt.z, _BlitScaleBiasRt.w, 0, 0);
     output.positionCS.xy = output.positionCS.xy * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f); //convert to -1..1
-    output.texcoord      = uv * _BlitScaleBias.xy + _BlitScaleBias.zw;
+    output.texcoord      = DYNAMIC_SCALING_APPLY_SCALEBIAS(uv);
     return output;
 }
 
@@ -88,19 +76,14 @@ Varyings VertQuadPadding(Attributes input)
     float2 scalePadding = ((_BlitTextureSize + float(_BlitPaddingSize)) / _BlitTextureSize);
     float2 offsetPadding = (float(_BlitPaddingSize) / 2.0) / (_BlitTextureSize + _BlitPaddingSize);
 
-#if SHADER_API_GLES
-    float4 pos = input.positionOS;
-    float2 uv  = input.uv;
-#else
     float4 pos = GetQuadVertexPosition(input.vertexID);
     float2 uv  = GetQuadTexCoord(input.vertexID);
-#endif
 
     output.positionCS = pos * float4(_BlitScaleBiasRt.x, _BlitScaleBiasRt.y, 1, 1) + float4(_BlitScaleBiasRt.z, _BlitScaleBiasRt.w, 0, 0);
     output.positionCS.xy = output.positionCS.xy * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f); //convert to -1..1
     output.texcoord = uv;
     output.texcoord = (output.texcoord - offsetPadding) * scalePadding;
-    output.texcoord = output.texcoord * _BlitScaleBias.xy + _BlitScaleBias.zw;
+    output.texcoord = DYNAMIC_SCALING_APPLY_SCALEBIAS(output.texcoord);
     return output;
 }
 

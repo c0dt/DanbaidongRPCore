@@ -1,7 +1,7 @@
 #ifndef UNITY_COMMON_INCLUDED
 #define UNITY_COMMON_INCLUDED
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH || defined(UNITY_UNIFIED_SHADER_PRECISION_MODEL)
 #pragma warning (disable : 3205) // conversion of larger type to smaller
 #endif
 
@@ -66,12 +66,59 @@
 // The function of the shader library are stateless, no uniform declare in it.
 // Any function that require an explicit precision, use float or half qualifier, when the function can support both, it use real (see below)
 // If a function require to have both a half and a float version, then both need to be explicitly define
+
+///
+/// Hardware Support for Wave Operations
+///
+
+// Support for wave operations is intentionally limited to the compute shader stage in order to make this functionality available to a wider range of hardware.
+#if defined(SHADER_STAGE_COMPUTE)
+    //
+    // Platform Support
+    //
+    // Platforms may indicate support for wave operations at compile-time.
+    // Shaders on these platforms may not always be compiled with a compiler that supports wave operations.
+    // To simplify usage, we check for a supported compiler here before indicating that wave operations are supported.
+    #if ((defined(UNITY_PLATFORM_SUPPORTS_WAVE_32) || defined(UNITY_PLATFORM_SUPPORTS_WAVE_64)) && (defined(UNITY_COMPILER_DXC) || defined(SHADER_API_PSSL)))
+        #if defined(UNITY_PLATFORM_SUPPORTS_WAVE_32)
+            #define UNITY_HW_WAVE_SIZE 32
+        #elif defined(UNITY_PLATFORM_SUPPORTS_WAVE_64)
+            #define UNITY_HW_WAVE_SIZE 64
+        #endif
+
+        #define UNITY_PLATFORM_SUPPORTS_WAVE 1
+    //
+    // Device Support
+    //
+    // Devices may indicate support for wave operations at run-time.
+    // Shaders compiled with these defines are always compiled with a compiler that supports wave operations.
+    #elif (defined(UNITY_DEVICE_SUPPORTS_WAVE_ANY) || defined(UNITY_DEVICE_SUPPORTS_WAVE_8) || defined(UNITY_DEVICE_SUPPORTS_WAVE_16) || defined(UNITY_DEVICE_SUPPORTS_WAVE_32) || defined(UNITY_DEVICE_SUPPORTS_WAVE_64) || defined(UNITY_DEVICE_SUPPORTS_WAVE_128))
+        #if defined(UNITY_DEVICE_SUPPORTS_WAVE_8)
+            #define UNITY_HW_WAVE_SIZE 8
+        #elif defined(UNITY_DEVICE_SUPPORTS_WAVE_16)
+            #define UNITY_HW_WAVE_SIZE 16
+        #elif defined(UNITY_DEVICE_SUPPORTS_WAVE_32)
+            #define UNITY_HW_WAVE_SIZE 32
+        #elif defined(UNITY_DEVICE_SUPPORTS_WAVE_64)
+            #define UNITY_HW_WAVE_SIZE 64
+        #elif defined(UNITY_DEVICE_SUPPORTS_WAVE_128)
+            #define UNITY_HW_WAVE_SIZE 128
+        #endif
+
+        #define UNITY_DEVICE_SUPPORTS_WAVE 1
+    #endif
+
+    #if (defined(UNITY_PLATFORM_SUPPORTS_WAVE) || defined(UNITY_DEVICE_SUPPORTS_WAVE))
+        #define UNITY_HW_SUPPORTS_WAVE 1
+    #endif
+#endif
+
 #ifndef real
 
 // The including shader should define whether half
 // precision is suitable for its needs.  The shader
 // API (for now) can indicate whether half is possible.
-#if defined(SHADER_API_MOBILE) || defined(SHADER_API_SWITCH)
+#if defined(SHADER_API_MOBILE) || defined(SHADER_API_SWITCH) || defined(UNITY_UNIFIED_SHADER_PRECISION_MODEL)
 #define HAS_HALF 1
 #else
 #define HAS_HALF 0
@@ -87,7 +134,8 @@
 #define REAL_IS_HALF 0
 #endif // Do we have half?
 
-#if REAL_IS_HALF || (defined(UNITY_UNIFIED_SHADER_PRECISION_MODEL) && (defined(UNITY_COMPILER_HLSL) || defined(UNITY_COMPILER_DXC)))
+#if REAL_IS_HALF
+#define HALF_IS_FLOAT 0
 #define half min16float
 #define half2 min16float2
 #define half3 min16float3
@@ -99,6 +147,8 @@
 #define half3x4 min16float3x4
 #define half4x3 min16float4x3
 #define half4x4 min16float4x4
+#else
+#define HALF_IS_FLOAT (!defined(UNITY_DEVICE_SUPPORTS_NATIVE_16BIT))
 #endif
 
 #if REAL_IS_HALF
@@ -119,9 +169,6 @@
 #define REAL_MIN HALF_MIN
 #define REAL_MAX HALF_MAX
 #define REAL_EPS HALF_EPS
-#define TEMPLATE_1_REAL TEMPLATE_1_HALF
-#define TEMPLATE_2_REAL TEMPLATE_2_HALF
-#define TEMPLATE_3_REAL TEMPLATE_3_HALF
 
 #else
 
@@ -142,9 +189,6 @@
 #define REAL_MIN FLT_MIN
 #define REAL_MAX FLT_MAX
 #define REAL_EPS FLT_EPS
-#define TEMPLATE_1_REAL TEMPLATE_1_FLT
-#define TEMPLATE_2_REAL TEMPLATE_2_FLT
-#define TEMPLATE_3_REAL TEMPLATE_3_FLT
 
 #endif // REAL_IS_HALF
 
@@ -188,8 +232,8 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/API/GLCore.hlsl"
 #elif defined(SHADER_API_GLES3)
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/API/GLES3.hlsl"
-#elif defined(SHADER_API_GLES)
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/API/GLES2.hlsl"
+#elif defined(SHADER_API_WEBGPU)
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/API/WebGPU.hlsl"
 #else
 #error unsupported shader api
 #endif
@@ -197,6 +241,11 @@
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Macros.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Random.hlsl"
+
+#if !defined(SHADER_API_PS5)
+#define PushMarker(str)
+#define PopMarker()
+#endif
 
 #ifdef SHADER_API_XBOXONE // TODO: to move in .nda package in 21.1
 #define PLATFORM_SUPPORTS_PRIMITIVE_ID_IN_PIXEL_SHADER
@@ -343,33 +392,28 @@
 #endif
 
 // ----------------------------------------------------------------------------
-// Global Constant buffers API definitions
+// Global resources API definitions for Ray Tracing
 // ----------------------------------------------------------------------------
 #if (SHADER_STAGE_RAY_TRACING && UNITY_RAY_TRACING_GLOBAL_RESOURCES)
     #define GLOBAL_RESOURCE(type, name, reg) type name : register(reg, space1);
     #define GLOBAL_CBUFFER_START(name, reg) cbuffer name : register(reg, space1) {
+    #define GLOBAL_TEXTURE2D(name, reg) TEXTURE2D(name) : register(reg, space1)
+    #define GLOBAL_TEXTURE2D_ARRAY(name, reg) TEXTURE2D_ARRAY(name) : register(reg, space1)
+    #define GLOBAL_TEXTURECUBE_ARRAY(name, reg) TEXTURECUBE_ARRAY(name) : register(reg, space1)
 #else
     #define GLOBAL_RESOURCE(type, name, reg) type name;
     #define GLOBAL_CBUFFER_START(name, reg) CBUFFER_START(name)
+    #define GLOBAL_TEXTURE2D(name, reg) TEXTURE2D(name)
+    #define GLOBAL_TEXTURE2D_ARRAY(name, reg) TEXTURE2D_ARRAY(name)
+    #define GLOBAL_TEXTURECUBE_ARRAY(name, reg) TEXTURECUBE_ARRAY(name)
 #endif
 
 // ----------------------------------------------------------------------------
 // Common intrinsic (general implementation of intrinsic available on some platform)
 // ----------------------------------------------------------------------------
 
-// Error on GLES2 undefined functions
-#ifdef SHADER_API_GLES
-#define BitFieldExtract ERROR_ON_UNSUPPORTED_FUNCTION(BitFieldExtract)
-#define IsBitSet ERROR_ON_UNSUPPORTED_FUNCTION(IsBitSet)
-#define SetBit ERROR_ON_UNSUPPORTED_FUNCTION(SetBit)
-#define ClearBit ERROR_ON_UNSUPPORTED_FUNCTION(ClearBit)
-#define ToggleBit ERROR_ON_UNSUPPORTED_FUNCTION(ToggleBit)
-#define FastMulBySignOfNegZero ERROR_ON_UNSUPPORTED_FUNCTION(FastMulBySignOfNegZero)
-#define LODDitheringTransition ERROR_ON_UNSUPPORTED_FUNCTION(LODDitheringTransition)
-#endif
-
-// On everything but GCN consoles or DXC compiled shaders we error on cross-lane operations
-#if !defined(PLATFORM_SUPPORTS_WAVE_INTRINSICS) && !defined(UNITY_COMPILER_DXC)
+#if !defined(PLATFORM_SUPPORTS_WAVE_INTRINSICS) && !defined(UNITY_COMPILER_DXC) && !defined(UNITY_HW_SUPPORTS_WAVE)
+// Intercept wave functions when they aren't supported to provide better error messages
 #define WaveActiveAllTrue ERROR_ON_UNSUPPORTED_FUNCTION(WaveActiveAllTrue)
 #define WaveActiveAnyTrue ERROR_ON_UNSUPPORTED_FUNCTION(WaveActiveAnyTrue)
 #define WaveGetLaneIndex ERROR_ON_UNSUPPORTED_FUNCTION(WaveGetLaneIndex)
@@ -392,8 +436,6 @@
 #endif
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonDeprecated.hlsl"
-
-#if !defined(SHADER_API_GLES)
 
 #ifndef INTRINSIC_BITFIELD_EXTRACT
 // Unsigned integer bit field extraction.
@@ -447,11 +489,10 @@ void ToggleBit(inout uint data, uint offset)
 {
     data ^= 1u << offset;
 }
-#endif
 
 #ifndef INTRINSIC_WAVEREADFIRSTLANE
     // Warning: for correctness, the argument's value must be the same across all lanes of the wave.
-    TEMPLATE_1_REAL(WaveReadLaneFirst, scalarValue, return scalarValue)
+    TEMPLATE_1_FLT_HALF(WaveReadLaneFirst, scalarValue, return scalarValue)
     TEMPLATE_1_INT(WaveReadLaneFirst, scalarValue, return scalarValue)
 #endif
 
@@ -464,13 +505,13 @@ void ToggleBit(inout uint data, uint offset)
 #endif // INTRINSIC_MAD24
 
 #ifndef INTRINSIC_MINMAX3
-    TEMPLATE_3_REAL(Min3, a, b, c, return min(min(a, b), c))
+    TEMPLATE_3_FLT_HALF(Min3, a, b, c, return min(min(a, b), c))
     TEMPLATE_3_INT(Min3, a, b, c, return min(min(a, b), c))
-    TEMPLATE_3_REAL(Max3, a, b, c, return max(max(a, b), c))
+    TEMPLATE_3_FLT_HALF(Max3, a, b, c, return max(max(a, b), c))
     TEMPLATE_3_INT(Max3, a, b, c, return max(max(a, b), c))
 #endif // INTRINSIC_MINMAX3
 
-TEMPLATE_3_REAL(Avg3, a, b, c, return (a + b + c) * 0.33333333)
+TEMPLATE_3_FLT_HALF(Avg3, a, b, c, return (a + b + c) * 0.33333333)
 
 // Important! Quad functions only valid in pixel shaders!
     float2 GetQuadOffset(int2 screenPos)
@@ -559,7 +600,6 @@ float CubeMapFaceID(float3 dir)
 }
 #endif // INTRINSIC_CUBEMAP_FACE_ID
 
-#if !defined(SHADER_API_GLES)
 // Intrinsic isnan can't be used because it require /Gic to be enabled on fxc that we can't do. So use AnyIsNan instead
 bool IsNaN(float x)
 {
@@ -621,8 +661,6 @@ float SanitizePositiveFinite(float x)
     return IsPositiveFinite(x) ? x : 0;
 }
 
-#endif
-
 // ----------------------------------------------------------------------------
 // Common math functions
 // ----------------------------------------------------------------------------
@@ -638,7 +676,7 @@ real RadToDeg(real rad)
 }
 
 // Square functions for cleaner code
-TEMPLATE_1_REAL(Sq, x, return (x) * (x))
+TEMPLATE_1_FLT_HALF(Sq, x, return (x) * (x))
 TEMPLATE_1_INT(Sq, x, return (x) * (x))
 
 bool IsPower2(uint x)
@@ -700,7 +738,7 @@ real FastATan(real x)
 
 real FastAtan2(real y, real x)
 {
-    return FastATan(y / x) + (y >= 0.0 ? PI : -PI) * (x < 0.0);
+    return FastATan(y / x) + real(y >= 0.0 ? PI : -PI) * (x < 0.0);
 }
 
 #if (SHADER_TARGET >= 45)
@@ -714,7 +752,7 @@ uint FastLog2(uint x)
 // "pow(f, e) will not work for negative f, use abs(f) or conditionally handle negative values if you expect them"
 // PositivePow remove this warning when you know the value is positive or 0 and avoid inf/NAN.
 // Note: https://msdn.microsoft.com/en-us/library/windows/desktop/bb509636(v=vs.85).aspx pow(0, >0) == 0
-TEMPLATE_2_REAL(PositivePow, base, power, return pow(abs(base), power))
+TEMPLATE_2_FLT_HALF(PositivePow, base, power, return pow(abs(base), power))
 
 // SafePositivePow: Same as pow(x,y) but considers x always positive and never exactly 0 such that
 // SafePositivePow(0,y) will numerically converge to 1 as y -> 0, including SafePositivePow(0,0) returning 1.
@@ -747,11 +785,12 @@ TEMPLATE_2_REAL(PositivePow, base, power, return pow(abs(base), power))
 //        for behavior depending on pow(0, y) giving always 0, especially for 0 < y < 1.
 //
 // Ref: https://msdn.microsoft.com/en-us/library/windows/desktop/bb509636(v=vs.85).aspx
-TEMPLATE_2_REAL(SafePositivePow, base, power, return pow(max(abs(base), real(REAL_EPS)), power))
+TEMPLATE_2_FLT(SafePositivePow, base, power, return pow(max(abs(base), float(FLT_EPS)), power))
+TEMPLATE_2_HALF(SafePositivePow, base, power, return pow(max(abs(base), min16float(HALF_EPS)), power))
 
 // Helpers for making shadergraph functions consider precision spec through the same $precision token used for variable types
 TEMPLATE_2_FLT(SafePositivePow_float, base, power, return pow(max(abs(base), float(FLT_EPS)), power))
-TEMPLATE_2_HALF(SafePositivePow_half, base, power, return pow(max(abs(base), half(HALF_EPS)), power))
+TEMPLATE_2_HALF(SafePositivePow_half, base, power, return pow(max(abs(base), min16float(HALF_EPS)), power))
 
 float Eps_float() { return FLT_EPS; }
 float Min_float() { return FLT_MIN; }
@@ -760,12 +799,20 @@ half Eps_half() { return HALF_EPS; }
 half Min_half() { return HALF_MIN; }
 half Max_half() { return HALF_MAX; }
 
+// Compute the 'epsilon equal' relative to the scale of 'a' & 'b'.
+// Farther to 0.0f 'a' or 'b' are, larger epsilon have to be.
+bool NearlyEqual(float a, float b, float epsilon)
+{
+    return abs(a - b) / (abs(a) + abs(b)) < epsilon;
+}
+
+TEMPLATE_2_FLT(NearlyEqual_Float, a, b, return abs(a - b) / (abs(a) + abs(b)) < float(FLT_EPS))
+TEMPLATE_2_HALF(NearlyEqual_Half, a, b, return abs(a - b) / (abs(a) + abs(b)) < min16float(HALF_EPS))
 
 // Composes a floating point value with the magnitude of 'x' and the sign of 's'.
 // See the comment about FastSign() below.
 float CopySign(float x, float s, bool ignoreNegZero = true)
 {
-#if !defined(SHADER_API_GLES)
     if (ignoreNegZero)
     {
         return (s >= 0) ? abs(x) : -abs(x);
@@ -776,9 +823,6 @@ float CopySign(float x, float s, bool ignoreNegZero = true)
         uint signBit = negZero & asuint(s);
         return asfloat(BitFieldInsert(negZero, signBit, asuint(x)));
     }
-#else
-    return (s >= 0) ? abs(x) : -abs(x);
-#endif
 }
 
 // Returns -1 for negative numbers and 1 for positive numbers.
@@ -804,10 +848,10 @@ real3 Orthonormalize(real3 tangent, real3 normal)
 }
 
 // [start, end] -> [0, 1] : (x - start) / (end - start) = x * rcpLength - (start * rcpLength)
-TEMPLATE_3_REAL(Remap01, x, rcpLength, startTimesRcpLength, return saturate(x * rcpLength - startTimesRcpLength))
+TEMPLATE_3_FLT_HALF(Remap01, x, rcpLength, startTimesRcpLength, return saturate(x * rcpLength - startTimesRcpLength))
 
 // [start, end] -> [1, 0] : (end - x) / (end - start) = (end * rcpLength) - x * rcpLength
-TEMPLATE_3_REAL(Remap10, x, rcpLength, endTimesRcpLength, return saturate(endTimesRcpLength - x * rcpLength))
+TEMPLATE_3_FLT_HALF(Remap10, x, rcpLength, endTimesRcpLength, return saturate(endTimesRcpLength - x * rcpLength))
 
 // Remap: [0.5 / size, 1 - 0.5 / size] -> [0, 1]
 real2 RemapHalfTexelCoordTo01(real2 coord, real2 size)
@@ -863,6 +907,7 @@ real Pow4(real x)
 #endif
 
 TEMPLATE_3_FLT(RangeRemap, min, max, t, return saturate((t - min) / (max - min)))
+TEMPLATE_3_FLT(RangeRemapFrom01, min, max, t,  return (max - min) * t + min)
 
 float4x4 Inverse(float4x4 m)
 {
@@ -904,6 +949,11 @@ float4x4 Inverse(float4x4 m)
     return ret;
 }
 
+float Remap(float origFrom, float origTo, float targetFrom, float targetTo, float value)
+{
+    return lerp(targetFrom, targetTo, (value - origFrom) / (origTo - origFrom));
+}
+
 // ----------------------------------------------------------------------------
 // Texture utilities
 // ----------------------------------------------------------------------------
@@ -941,7 +991,7 @@ float ComputeTextureLOD(float3 duvw_dx, float3 duvw_dy, float3 duvw_dz, float sc
     return max(0.5f * log2(d * (scale * scale)) - bias, 0.0);
 }
 
-#if defined(SHADER_API_D3D11) || defined(SHADER_API_D3D12) || defined(SHADER_API_D3D11_9X) || defined(SHADER_API_XBOXONE) || defined(SHADER_API_PSSL)
+#if defined(SHADER_API_D3D11) || defined(SHADER_API_D3D12) || defined(SHADER_API_D3D11_9X) || defined(SHADER_API_XBOXONE) || defined(SHADER_API_PSSL) || defined(SHADER_API_METAL)
     #define MIP_COUNT_SUPPORTED 1
 #endif
     // TODO: Bug workaround, switch defines GLCORE when it shouldn't
@@ -975,7 +1025,7 @@ uint GetMipCount(TEXTURE2D_PARAM(tex, smp))
 #define DXC_SAMPLER_COMPATIBILITY 1
 
 // On DXC platforms which don't care about explicit sampler precison we want the emulated types to work directly e.g without needing to redefine 'sampler2D' to 'sampler2D_f'
-#if !defined(SHADER_API_GLES3) && !defined(SHADER_API_VULKAN) && !defined(SHADER_API_METAL) && !defined(SHADER_API_SWITCH)
+#if !defined(SHADER_API_GLES3) && !defined(SHADER_API_VULKAN) && !defined(SHADER_API_METAL) && !defined(SHADER_API_SWITCH) && !defined(SHADER_API_WEBGPU)
     #define sampler1D_f sampler1D
     #define sampler2D_f sampler2D
     #define sampler3D_f sampler3D
@@ -1080,6 +1130,11 @@ float3 LatlongToDirectionCoordinate(float2 coord)
     return direction;
 }
 
+float2 OrientationToDirection(float orientation)
+{
+    return float2(cos(orientation), sin(orientation));
+}
+
 // ----------------------------------------------------------------------------
 // Depth encoding/decoding
 // ----------------------------------------------------------------------------
@@ -1117,8 +1172,7 @@ float LinearEyeDepth(float depth, float4 zBufferParam)
 // Ref: An Efficient Depth Linearization Method for Oblique View Frustums, Eq. 6.
 float LinearEyeDepth(float2 positionNDC, float deviceDepth, float4 invProjParam)
 {
-    float4 positionCS = float4(positionNDC * 2.0 - 1.0, deviceDepth, 1.0);
-    float  viewSpaceZ = rcp(dot(positionCS, invProjParam));
+    float viewSpaceZ = rcp(dot(float4(positionNDC, deviceDepth, 1.0), invProjParam));
 
     // If the matrix is right-handed, we have to flip the Z axis to get a positive value.
     return abs(viewSpaceZ);
@@ -1182,6 +1236,20 @@ float DecodeLogarithmicDepth(float d, float4 encodingParams)
 {
     // TODO: optimize to exp2(d * y + log2(x)).
     return encodingParams.x * exp2(d * encodingParams.y);
+}
+
+// Use an infinite far plane
+// https://chaosinmotion.com/2010/09/06/goodbye-far-clipping-plane/
+// 'depth' is the linear depth (view-space Z position)
+float EncodeInfiniteDepth(float depth, float near)
+{
+    return saturate(near / depth);
+}
+
+// 'z' is the depth encoded in the depth buffer (1 at near plane, 0 at far plane)
+float DecodeInfiniteDepth(float z, float near)
+{
+    return near / max(z, FLT_EPS);
 }
 
 real4 CompositeOver(real4 front, real4 back)
@@ -1394,7 +1462,7 @@ void ApplyDepthOffsetPositionInput(float3 V, float depthOffsetVS, float3 viewFor
 // Terrain/Brush heightmap encoding/decoding
 // ----------------------------------------------------------------------------
 
-#if defined(SHADER_API_VULKAN) || defined(SHADER_API_GLES) || defined(SHADER_API_GLES3)
+#if defined(SHADER_API_VULKAN) || defined(SHADER_API_GLES3) || defined(SHADER_API_WEBGPU)
 
 // For the built-in target this is already a defined symbol
 #ifndef BUILTIN_TARGET_API
@@ -1438,17 +1506,28 @@ bool HasFlag(uint bitfield, uint flag)
 }
 
 // Normalize that account for vectors with zero length
-real3 SafeNormalize(float3 inVec)
+float3 SafeNormalize(float3 inVec)
 {
     float dp3 = max(FLT_MIN, dot(inVec, inVec));
     return inVec * rsqrt(dp3);
 }
 
-// Checks if a vector is normalized
+half3 SafeNormalize(half3 inVec)
+{
+    half dp3 = max(HALF_MIN, dot(inVec, inVec));
+    return inVec * rsqrt(dp3);
+}
+
 bool IsNormalized(float3 inVec)
 {
-    real l = length(inVec);
-    return length(l) < 1.0001 && length(l) > 0.9999;
+    float squaredLength = dot(inVec, inVec);
+    return 0.9998 < squaredLength && squaredLength < 1.0002001;
+}
+
+bool IsNormalized(half3 inVec)
+{
+    half squaredLength = dot(inVec, inVec);
+    return 0.998 < squaredLength && squaredLength < 1.002;
 }
 
 // Division which returns 1 for (inf/inf) and (0/0).
@@ -1535,7 +1614,7 @@ float4 GetQuadVertexPosition(uint vertexID, float z = UNITY_NEAR_CLIP_VALUE)
     return pos;
 }
 
-#if !defined(SHADER_API_GLES) && !defined(SHADER_STAGE_RAY_TRACING)
+#if !defined(SHADER_STAGE_RAY_TRACING)
 
 // LOD dithering transition helper
 // LOD0 must use this function with ditherFactor 1..0
@@ -1574,9 +1653,9 @@ float SharpenAlpha(float alpha, float alphaClipTreshold)
 }
 
 // These clamping function to max of floating point 16 bit are use to prevent INF in code in case of extreme value
-TEMPLATE_1_REAL(ClampToFloat16Max, value, return min(value, HALF_MAX))
+TEMPLATE_1_FLT(ClampToFloat16Max, value, return min(value, HALF_MAX))
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH
 #pragma warning (enable : 3205) // conversion of larger type to smaller
 #endif
 

@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 #if UNITY_EDITOR
 using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 #endif
@@ -25,8 +26,8 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// The constructor of the attribute
         /// </summary>
-        /// <param name="pageName"></param>
-        /// <param name="packageName"></param>
+        /// <param name="pageName">The name of the documentation page.</param>
+        /// <param name="packageName">The package name, defaulting to "com.unity.render-pipelines.core".</param>
         public CoreRPHelpURLAttribute(string pageName, string packageName = "com.unity.render-pipelines.core")
             : base(DocumentationInfo.GetPageLink(packageName, pageName, ""))
         {
@@ -35,12 +36,52 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// The constructor of the attribute
         /// </summary>
-        /// <param name="pageName"></param>
-        /// <param name="packageName"></param>
-        /// <param name="pageHash"></param>
+        /// <param name="pageName">The name of the documentation page.</param>
+        /// <param name="pageHash">The hash specifying a section within the page.</param>
+        /// <param name="packageName">The package name, defaulting to "com.unity.render-pipelines.core".</param>
         public CoreRPHelpURLAttribute(string pageName, string pageHash, string packageName = "com.unity.render-pipelines.core")
             : base(DocumentationInfo.GetPageLink(packageName, pageName, pageHash))
         {
+        }
+    }
+
+    /// <summary>
+    /// Use this attribute to define the help URP.
+    /// </summary>
+    /// <example>
+    /// [CoreRPHelpURLAttribute("Volume")]
+    /// public class Volume : MonoBehaviour
+    /// </example>
+    [Conditional("UNITY_EDITOR")]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Enum, AllowMultiple = false)]
+    public class CurrentPipelineHelpURLAttribute : HelpURLAttribute
+    {
+        private string pageName { get; }
+        /// <summary>
+        /// The constructor of the attribute
+        /// </summary>
+        /// <param name="pageName">The name of the documentation page.</param>
+        public CurrentPipelineHelpURLAttribute(string pageName)
+            : base(null)
+        {
+            this.pageName = pageName;
+        }
+
+        /// <summary>
+        /// Returns the URL to the given page in the current Render Pipeline package documentation site.
+        /// </summary>
+        public override string URL
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (DocumentationUtils.TryGetPackageInfoForType(GraphicsSettings.currentRenderPipeline?.GetType() ?? typeof(DocumentationInfo), out var package, out var version))
+                {
+                    return DocumentationInfo.GetPackageLink(package, version, this.pageName);
+                }
+#endif
+                return string.Empty;
+            }
         }
     }
 
@@ -61,29 +102,37 @@ namespace UnityEngine.Rendering
             get
             {
 #if UNITY_EDITOR
-                var packageInfo = PackageInfo.FindForAssembly(typeof(DocumentationInfo).Assembly);
-                return packageInfo == null ? fallbackVersion : packageInfo.version.Substring(0, 4);
-#else
-                return fallbackVersion;
+                if (DocumentationUtils.TryGetPackageInfoForType(typeof(DocumentationInfo), out _, out var version))
+                    return version;
 #endif
+                return fallbackVersion;
             }
         }
+
+        /// <summary>
+        /// Generates a help URL for the given package and page name.
+        /// </summary>
+        /// <param name="packageName">The package name.</param>
+        /// <param name="packageVersion">The package version.</param>
+        /// <param name="pageName">The page name without the extension.</param>
+        /// <returns>The full URL of the page.</returns>
+        public static string GetPackageLink(string packageName, string packageVersion, string pageName) => string.Format(url, packageName, packageVersion, pageName, "");
 
         /// <summary>
         /// Generates a help url for the given package and page name
         /// </summary>
         /// <param name="packageName">The package name</param>
-        /// <param name="pageName">The page name</param>
-        /// <returns>The full url page</returns>
+        /// <param name="pageName">The page name without the extension.</param>
+        /// <returns>The full URL of the page.</returns>
         public static string GetPageLink(string packageName, string pageName) => string.Format(url, packageName, version, pageName, "");
 
         /// <summary>
         /// Generates a help url for the given package and page name
         /// </summary>
         /// <param name="packageName">The package name</param>
-        /// <param name="pageName">The page name</param>
+        /// <param name="pageName">The page name without the extension.</param>
         /// <param name="pageHash">The page hash</param>
-        /// <returns>The full url page</returns>
+        /// <returns>The full URL of the page.</returns>
         public static string GetPageLink(string packageName, string pageName, string pageHash) => string.Format(url, packageName, version, pageName, pageHash);
     }
 
@@ -121,5 +170,29 @@ namespace UnityEngine.Rendering
             url = attribute?.URL;
             return attribute != null;
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Obtain package informations from a specific type
+        /// </summary>
+        /// <param name="type">The type used to retrieve package information</param>
+        /// <param name="packageName">The name of the package containing the given type</param>
+        /// <param name="version">The version number of the package containing the given type. Only Major.Minor will be returned as fix is not used for documentation</param>
+        /// <returns></returns>
+        public static bool TryGetPackageInfoForType([DisallowNull] Type type, [NotNullWhen(true)] out string packageName, [NotNullWhen(true)] out string version)
+        {
+            var packageInfo = PackageInfo.FindForAssembly(type.Assembly);
+            if (packageInfo == null)
+            {
+                packageName = null;
+                version = null;
+                return false;
+            }
+
+            packageName = packageInfo.name;
+            version = packageInfo.version.Substring(0, packageInfo.version.LastIndexOf('.'));
+            return true;
+        }
+#endif
     }
 }

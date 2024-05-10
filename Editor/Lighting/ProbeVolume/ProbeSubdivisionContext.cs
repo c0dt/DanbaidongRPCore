@@ -42,11 +42,11 @@ namespace UnityEngine.Rendering
 
                 if (Time.realtimeSinceStartupAsDouble - s_LastSubdivisionTime > debugDisplay.subdivisionDelayInSeconds)
                 {
-                    var probeVolume = GameObject.FindObjectOfType<ProbeVolume>();
-                    if (probeVolume == null || !probeVolume.isActiveAndEnabled || ProbeReferenceVolume.instance.sceneData == null)
+                    var probeVolume = GameObject.FindFirstObjectByType<ProbeVolume>();
+                    if (probeVolume == null || !probeVolume.isActiveAndEnabled)
                         return;
 
-                    var profile = ProbeReferenceVolume.instance.sceneData.GetProfileForScene(probeVolume.gameObject.scene);
+                    var profile = ProbeVolumeBakingSet.GetBakingSetForScene(probeVolume.gameObject.scene);
                     if (profile == null)
                         return;
 
@@ -73,7 +73,8 @@ namespace UnityEngine.Rendering
 
                     IEnumerator Subdivide()
                     {
-                        var ctx = ProbeGIBaking.PrepareProbeSubdivisionContext();
+                        var ctx = AdaptiveProbeVolumes.PrepareProbeSubdivisionContext(true);
+                        var contributors = GIContributors.Find(GIContributors.ContributorFilter.All);
 
                         // Cull all the cells that are not visible (we don't need them for realtime debug)
                         ctx.cells.RemoveAll(c =>
@@ -113,7 +114,7 @@ namespace UnityEngine.Rendering
                             ctx.cells.Clear();
                             ctx.cells.Add(cell);
 
-                            var result = ProbeGIBaking.BakeBricks(ctx);
+                            var result = AdaptiveProbeVolumes.BakeBricks(ctx, contributors);
 
                             if (result.cells.Count != 0)
                                 ProbeReferenceVolume.instance.realtimeSubdivisionInfo[cell.bounds] = result.cells[0].bricks;
@@ -131,52 +132,50 @@ namespace UnityEngine.Rendering
 
         public List<(ProbeVolume component, ProbeReferenceVolume.Volume volume, Bounds bounds)> probeVolumes = new ();
         public List<(Vector3Int position, Bounds bounds)> cells = new ();
-        public GIContributors contributors;
-        public ProbeReferenceVolumeProfile profile;
+        public ProbeVolumeBakingSet bakingSet;
+        public ProbeVolumeProfileInfo profile;
 
-        public void Initialize(ProbeReferenceVolumeProfile profile, Vector3 refVolOrigin)
+        public void Initialize(ProbeVolumeBakingSet bakingSet, ProbeVolumeProfileInfo profileInfo, Vector3 refVolOrigin)
         {
             Profiling.Profiler.BeginSample("ProbeSubdivisionContext.Initialize");
 
-            this.profile = profile;
-            float cellSize = profile.cellSizeInMeters;
+            this.bakingSet = bakingSet;
+            profile = profileInfo;
+            float cellSize = profileInfo.cellSizeInMeters;
             Vector3 cellDimensions = new Vector3(cellSize, cellSize, cellSize);
 
-            var pvList = ProbeGIBaking.GetProbeVolumeList();
+            var pvList = AdaptiveProbeVolumes.GetProbeVolumeList();
             foreach (var pv in pvList)
             {
                 if (!pv.isActiveAndEnabled)
                     continue;
 
-                ProbeReferenceVolume.Volume volume = new ProbeReferenceVolume.Volume(Matrix4x4.TRS(pv.transform.position, pv.transform.rotation, pv.GetExtents()), pv.GetMaxSubdivMultiplier(), pv.GetMinSubdivMultiplier());
+                var volume = new ProbeReferenceVolume.Volume(pv.GetVolume(), pv.GetMaxSubdivMultiplier(profileInfo.maxSubdivision), pv.GetMinSubdivMultiplier(profileInfo.maxSubdivision));
                 probeVolumes.Add((pv, volume, volume.CalculateAABB()));
             }
-
-            contributors = GIContributors.Find(GIContributors.ContributorFilter.All);
 
             // Generate all the unique cell positions from probe volumes:
             HashSet<Vector3Int> cellPositions = new HashSet<Vector3Int>();
             foreach (var pv in probeVolumes)
             {
                 // This method generates many cells outside of the probe volumes but it's ok because next step will do obb collision tests between each cell and each probe volumes so we will eliminate them.
-                var minCellPosition = pv.bounds.min / cellSize;
-                var maxCellPosition = pv.bounds.max / cellSize;
+                var min = profileInfo.PositionToCell(pv.bounds.min);
+                var max = profileInfo.PositionToCell(pv.bounds.max);
 
-                Vector3Int min = new Vector3Int(Mathf.FloorToInt(minCellPosition.x), Mathf.FloorToInt(minCellPosition.y), Mathf.FloorToInt(minCellPosition.z));
-                Vector3Int max = new Vector3Int(Mathf.CeilToInt(maxCellPosition.x), Mathf.CeilToInt(maxCellPosition.y), Mathf.CeilToInt(maxCellPosition.z));
-
-                for (int x = min.x; x < max.x; x++)
+                for (int x = min.x; x <= max.x; x++)
                 {
-                    for (int y = min.y; y < max.y; y++)
-                        for (int z = min.z; z < max.z; z++)
+                    for (int y = min.y; y <= max.y; y++)
+                    {
+                        for (int z = min.z; z <= max.z; z++)
                         {
                             var cellPos = new Vector3Int(x, y, z);
                             if (cellPositions.Add(cellPos))
                             {
-                                var center = new Vector3((cellPos.x + 0.5f) * cellSize, (cellPos.y + 0.5f) * cellSize, (cellPos.z + 0.5f) * cellSize);
+                                var center = profileInfo.probeOffset + new Vector3((cellPos.x + 0.5f) * cellSize, (cellPos.y + 0.5f) * cellSize, (cellPos.z + 0.5f) * cellSize);
                                 cells.Add((cellPos, new Bounds(center, cellDimensions)));
                             }
                         }
+                    }
                 }
             }
 

@@ -16,9 +16,9 @@ static const float kSHBasisCoef[] = { kSHBasis0, -kSHBasis1, kSHBasis1, -kSHBasi
 
 // Clamped cosine convolution coefs (pre-divided by PI)
 // See https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
-#define kClampedCosine0 1.0f
-#define kClampedCosine1 2.0f / 3.0f
-#define kClampedCosine2 1.0f / 4.0f
+#define kClampedCosine0 (1.0f)
+#define kClampedCosine1 (2.0f / 3.0f)
+#define kClampedCosine2 (1.0f / 4.0f)
 
 static const float kClampedCosineCoefs[] = { kClampedCosine0, kClampedCosine1, kClampedCosine1, kClampedCosine1, kClampedCosine2, kClampedCosine2, kClampedCosine2, kClampedCosine2, kClampedCosine2 };
 
@@ -62,7 +62,7 @@ real3 SHEvalLinearL2(real3 N, real4 shBr, real4 shBg, real4 shBb, real4 shC)
     return x2 + x3;
 }
 
-#if HAS_HALF
+#if !HALF_IS_FLOAT
 half3 SampleSH9(half4 SHCoefficients[7], half3 N)
 {
     half4 shAr = SHCoefficients[0];
@@ -82,6 +82,22 @@ half3 SampleSH9(half4 SHCoefficients[7], half3 N)
 #ifdef UNITY_COLORSPACE_GAMMA
     res = LinearToSRGB(res);
 #endif
+
+    return res;
+}
+
+half3 SampleSH4_L1(half4 SHCoefficients[3], half3 N)
+{
+    half4 shAr = SHCoefficients[0];
+    half4 shAg = SHCoefficients[1];
+    half4 shAb = SHCoefficients[2];
+
+    // Linear + constant polynomial terms
+    half3 res = SHEvalLinearL1(N, shAr.xyz, shAg.xyz, shAb.xyz);
+
+    #ifdef UNITY_COLORSPACE_GAMMA
+    res = LinearToSRGB(res);
+    #endif
 
     return res;
 }
@@ -122,6 +138,22 @@ float3 SampleSH9(StructuredBuffer<float4> data, float3 N)
     SHCoefficients[6] = data[6];
 
     return SampleSH9(SHCoefficients, N);
+}
+
+float3 SampleSH4_L1(float4 SHCoefficients[3], float3 N)
+{
+    float4 shAr = SHCoefficients[0];
+    float4 shAg = SHCoefficients[1];
+    float4 shAb = SHCoefficients[2];
+
+    // Linear + constant polynomial terms
+    float3 res = SHEvalLinearL1(N, (float3)shAr, (float3)shAg, (float3)shAb);
+
+    #ifdef UNITY_COLORSPACE_GAMMA
+    res = LinearToSRGB(res);
+    #endif
+
+    return res;
 }
 
 void GetCornetteShanksPhaseFunction(out float3 zh, float anisotropy)

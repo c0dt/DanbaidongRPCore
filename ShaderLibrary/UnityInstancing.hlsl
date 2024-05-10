@@ -1,7 +1,7 @@
 #ifndef UNITY_INSTANCING_INCLUDED
 #define UNITY_INSTANCING_INCLUDED
 
-#if SHADER_TARGET >= 35 && (defined(SHADER_API_D3D11) || defined(SHADER_API_GLES3) || defined(SHADER_API_GLCORE) || defined(SHADER_API_XBOXONE) || defined(SHADER_API_GAMECORE) || defined(SHADER_API_PSSL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_METAL))
+#if SHADER_TARGET >= 35 && (defined(SHADER_API_D3D11) || defined(SHADER_API_GLES3) || defined(SHADER_API_GLCORE) || defined(SHADER_API_XBOXONE) || defined(SHADER_API_GAMECORE) || defined(SHADER_API_PSSL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_METAL) || defined(SHADER_API_WEBGPU))
     #define UNITY_SUPPORT_INSTANCING
 #endif
 
@@ -14,7 +14,7 @@
 #endif
 
 // These platforms support dynamically adjusting the instancing CB size according to the current batch.
-#if defined(SHADER_API_D3D11) || defined(SHADER_API_GLCORE) || defined(SHADER_API_GLES3) || defined(SHADER_API_METAL) || defined(SHADER_API_PSSL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_SWITCH)
+#if defined(SHADER_API_D3D11) || defined(SHADER_API_GLCORE) || defined(SHADER_API_GLES3) || defined(SHADER_API_METAL) || defined(SHADER_API_PSSL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_SWITCH) || defined(SHADER_API_WEBGPU)
     #define UNITY_INSTANCING_SUPPORT_FLEXIBLE_ARRAY_SIZE
 #endif
 
@@ -67,7 +67,7 @@
     #endif
 #endif
 
-#if defined(SHADER_API_GLES3) || defined(SHADER_API_GLCORE) || defined(SHADER_API_METAL) || defined(SHADER_API_VULKAN)
+#if defined(SHADER_API_GLES3) || defined(SHADER_API_GLCORE) || defined(SHADER_API_METAL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_WEBGPU)
     // These platforms have constant buffers disabled normally, but not here (see CBUFFER_START/CBUFFER_END in HLSLSupport.cginc).
     #define UNITY_INSTANCING_CBUFFER_SCOPE_BEGIN(name)  cbuffer name {
     #define UNITY_INSTANCING_CBUFFER_SCOPE_END          }
@@ -95,6 +95,10 @@
         UNITY_INSTANCING_CBUFFER_SCOPE_END
     #endif
 
+#if defined(SHADER_STAGE_RAY_TRACING)
+    #define DEFAULT_UNITY_VERTEX_INPUT_INSTANCE_ID uint instanceID;
+    #define UNITY_GET_INSTANCE_ID(input)        input.instanceID
+#else
     #ifdef SHADER_API_PSSL
         #define DEFAULT_UNITY_VERTEX_INPUT_INSTANCE_ID uint instanceID;
         #define UNITY_GET_INSTANCE_ID(input)    _GETINSTANCEID(input)
@@ -102,6 +106,7 @@
         #define DEFAULT_UNITY_VERTEX_INPUT_INSTANCE_ID uint instanceID : SV_InstanceID;
         #define UNITY_GET_INSTANCE_ID(input)    input.instanceID
     #endif
+#endif
 
 #else
     #define DEFAULT_UNITY_VERTEX_INPUT_INSTANCE_ID
@@ -175,7 +180,7 @@
 #endif
 
 ////////////////////////////////////////////////////////
-// - UNITY_SETUP_INSTANCE_ID        Should be used at the very beginning of the vertex shader / fragment shader,
+// - UNITY_SETUP_INSTANCE_ID        Should be used at the very beginning of the vertex shader / fragment shader / ray tracing hit shaders,
 //                                  so that succeeding code can have access to the global unity_InstanceID.
 //                                  Also procedural function is called to setup instance data.
 // - UNITY_TRANSFER_INSTANCE_ID     Copy instance ID from input struct to output struct. Used in vertex shader.
@@ -209,6 +214,9 @@
                 unity_StereoEyeIndex = inputInstanceID % _XRViewCount;
                 unity_InstanceID = localBaseInstanceId + (inputInstanceID / _XRViewCount);
             #endif
+        #elif defined(SHADER_STAGE_RAY_TRACING)
+            // InstanceIndex() intrinsic is the global ray tracing instance index in the TLAS and unity_BaseInstanceID is where the array of instances starts in the TLAS
+            unity_InstanceID = InstanceIndex() - localBaseInstanceId;
         #else
             unity_InstanceID = inputInstanceID + localBaseInstanceId;
         #endif
@@ -221,17 +229,26 @@
             void UNITY_INSTANCING_PROCEDURAL_FUNC(); // forward declaration of the procedural function
             #define DEFAULT_UNITY_SETUP_INSTANCE_ID(input)      { UnitySetupInstanceID(UNITY_GET_INSTANCE_ID(input)); UNITY_INSTANCING_PROCEDURAL_FUNC();}
         #endif
+    #elif defined(SHADER_STAGE_RAY_TRACING)
+        #define DEFAULT_UNITY_SETUP_INSTANCE_ID                 { UnitySetupInstanceID(0);}
     #else
         #define DEFAULT_UNITY_SETUP_INSTANCE_ID(input)          { UnitySetupInstanceID(UNITY_GET_INSTANCE_ID(input));}
     #endif
     #define UNITY_TRANSFER_INSTANCE_ID(input, output)   output.instanceID = UNITY_GET_INSTANCE_ID(input)
+#elif defined(SHADER_STAGE_RAY_TRACING)
+    #define DEFAULT_UNITY_SETUP_INSTANCE_ID
+    #define UNITY_TRANSFER_INSTANCE_ID(input, output)
 #else
     #define DEFAULT_UNITY_SETUP_INSTANCE_ID(input)
     #define UNITY_TRANSFER_INSTANCE_ID(input, output)
 #endif
 
 #if !defined(UNITY_SETUP_INSTANCE_ID)
-#   define UNITY_SETUP_INSTANCE_ID(input) DEFAULT_UNITY_SETUP_INSTANCE_ID(input)
+    #if defined(SHADER_STAGE_RAY_TRACING)
+        #define UNITY_SETUP_INSTANCE_ID DEFAULT_UNITY_SETUP_INSTANCE_ID
+    #else
+        #define UNITY_SETUP_INSTANCE_ID(input) DEFAULT_UNITY_SETUP_INSTANCE_ID(input)
+    #endif
 #endif
 
 ////////////////////////////////////////////////////////
@@ -245,7 +262,7 @@
     #elif defined(UNITY_MAX_INSTANCE_COUNT)
         #define UNITY_INSTANCED_ARRAY_SIZE  UNITY_MAX_INSTANCE_COUNT
     #else
-        #if (defined(SHADER_API_VULKAN) && defined(SHADER_API_MOBILE)) || defined(SHADER_API_SWITCH)
+        #if (defined(SHADER_API_VULKAN) && defined(SHADER_API_MOBILE)) || defined(SHADER_API_SWITCH) || defined(SHADER_API_WEBGPU)
             #define UNITY_INSTANCED_ARRAY_SIZE  250
         #else
             #define UNITY_INSTANCED_ARRAY_SIZE  500
@@ -264,14 +281,24 @@
         #define UNITY_SETUP_INSTANCE_ID(input) {\
             DEFAULT_UNITY_SETUP_INSTANCE_ID(input);\
             SetupDOTSVisibleInstancingData();\
-            UNITY_SETUP_DOTS_SH_COEFFS; }
+            UNITY_SETUP_DOTS_MATERIAL_PROPERTY_CACHES();\
+            UNITY_SETUP_DOTS_SH_COEFFS;\
+            UNITY_SETUP_DOTS_RENDER_BOUNDS; }
     #endif
 
+#else
+
+#if defined(SHADER_STAGE_RAY_TRACING)
+    #define UNITY_INSTANCING_BUFFER_START(buf)
+    #define UNITY_INSTANCING_BUFFER_END(arr)
+    #define UNITY_DEFINE_INSTANCED_PROP(type, var)  StructuredBuffer<type> var;
+    #define UNITY_ACCESS_INSTANCED_PROP(arr, var)   var[unity_InstanceID]
 #else
     #define UNITY_INSTANCING_BUFFER_START(buf)      UNITY_INSTANCING_CBUFFER_SCOPE_BEGIN(UnityInstancing_##buf) struct {
     #define UNITY_INSTANCING_BUFFER_END(arr)        } arr##Array[UNITY_INSTANCED_ARRAY_SIZE]; UNITY_INSTANCING_CBUFFER_SCOPE_END
     #define UNITY_DEFINE_INSTANCED_PROP(type, var)  type var;
     #define UNITY_ACCESS_INSTANCED_PROP(arr, var)   arr##Array[unity_InstanceID].var
+#endif
 
     #define UNITY_DOTS_INSTANCING_START(name)
     #define UNITY_DOTS_INSTANCING_END(name)

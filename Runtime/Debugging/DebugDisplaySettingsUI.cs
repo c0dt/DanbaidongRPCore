@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine.Rendering.RenderGraphModule;
 
 namespace UnityEngine.Rendering
 {
@@ -38,6 +39,8 @@ namespace UnityEngine.Rendering
             m_Settings = settings;
             m_DisposablePanels = panels;
 
+            m_Settings.Add(new DebugDisplaySettingsRenderGraph());
+
             Action<IDebugDisplaySettingsData> onExecute = (data) =>
             {
                 IDebugDisplaySettingsPanelDisposable disposableSettingsPanel = data.CreatePanel();
@@ -66,18 +69,21 @@ namespace UnityEngine.Rendering
         {
             DebugManager debugManager = DebugManager.instance;
 
-            foreach (IDebugDisplaySettingsPanelDisposable disposableSettingsPanel in m_DisposablePanels)
+            if (m_DisposablePanels != null)
             {
-                DebugUI.Widget[] panelWidgets = disposableSettingsPanel.Widgets;
-                string panelId = disposableSettingsPanel.PanelName;
-                DebugUI.Panel panel = debugManager.GetPanel(panelId, true);
-                ObservableList<DebugUI.Widget> panelChildren = panel.children;
+                foreach (IDebugDisplaySettingsPanelDisposable disposableSettingsPanel in m_DisposablePanels)
+                {
+                    DebugUI.Widget[] panelWidgets = disposableSettingsPanel.Widgets;
+                    string panelId = disposableSettingsPanel.PanelName;
+                    DebugUI.Panel panel = debugManager.GetPanel(panelId, true);
+                    ObservableList<DebugUI.Widget> panelChildren = panel.children;
 
-                disposableSettingsPanel.Dispose();
-                panelChildren.Remove(panelWidgets);
+                    disposableSettingsPanel.Dispose();
+                    panelChildren.Remove(panelWidgets);
+                }
+
+                m_DisposablePanels = null;
             }
-
-            m_DisposablePanels = null;
 
             debugManager.UnregisterData(this);
         }

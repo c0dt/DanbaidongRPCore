@@ -60,7 +60,7 @@ namespace UnityEngine.Rendering
         /// Accessor.
         /// </summary>
         /// <param name="index">Item index.</param>
-        /// <returns>The item at the provided index.</returns>
+        /// <value>The item at the provided index.</value>
         public T this[int index]
         {
             get { return m_List[index]; }
@@ -217,8 +217,8 @@ namespace UnityEngine.Rendering
         /// </summary>
         public void Clear()
         {
-            for (int i = 0; i < Count; i++)
-                RemoveAt(i);
+            while (Count > 0)
+                RemoveAt(Count - 1);
         }
 
         /// <summary>

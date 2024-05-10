@@ -1,19 +1,14 @@
-using System.Collections.Generic;
-using UnityEditor;
-using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
-using Unity.Jobs;
 using System;
+using System.Collections.Generic;
+using Unity.Collections;
 
 namespace UnityEngine.Rendering
 {
-    partial class ProbeGIBaking
+    partial class AdaptiveProbeVolumes
     {
         // We use this scratch memory as a way of spoofing the texture.
         static DynamicArray<float> s_Validity_locData = new DynamicArray<float>();
         static DynamicArray<int> s_ProbeIndices = new DynamicArray<int>();
-
-        static Dictionary<Vector3, Bounds> s_ForceInvalidatedProbesAndTouchupVols = new Dictionary<Vector3, Bounds>();
 
         internal static Vector3Int GetSampleOffset(int i)
         {
@@ -52,11 +47,9 @@ namespace UnityEngine.Rendering
             return s_ProbeIndices[index];
         }
 
-
         // TODO: This whole process will need optimization.
         static bool NeighbourhoodIsEmptySpace(Vector3 pos, float searchDistance, Bounds boundsToCheckAgainst)
         {
-
             Vector3 halfExtents = Vector3.one * searchDistance * 0.5f;
             Vector3 brickCenter = pos + halfExtents;
 
@@ -74,17 +67,15 @@ namespace UnityEngine.Rendering
             return true;
         }
 
-
         // This is very much modeled  to be as close as possible to the way bricks are loaded in the texture pool.
         // Not necessarily a good thing.
-        static void ComputeValidityMasks(BakingCell bakingCell)
+        static void ComputeValidityMasks(in BakingCell cell)
         {
-            var bricks = bakingCell.bricks;
-            var cell = bakingCell;
+            var bricks = cell.bricks;
             int chunkSize = ProbeBrickPool.GetChunkSizeInBrickCount();
             int brickChunksCount = (bricks.Length + chunkSize - 1) / chunkSize;
 
-            var probeHasEmptySpaceInGrid = new NativeArray<bool>(bakingCell.probePositions.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            var probeHasEmptySpaceInGrid = new NativeArray<bool>(cell.probePositions.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
             int shidx = 0;
             for (int chunkIndex = 0; chunkIndex < brickChunksCount; ++chunkIndex)
@@ -97,7 +88,6 @@ namespace UnityEngine.Rendering
                 s_Validity_locData.Resize(size);
                 s_ProbeIndices.Resize(size);
 
-                Dictionary<Vector3Int, (float, Vector3, Bounds)> probesToRestoreInfo = new Dictionary<Vector3Int, (float, Vector3, Bounds)>();
                 HashSet<Vector3Int> probesToRestore = new HashSet<Vector3Int>();
 
                 for (int brickIdx = 0; brickIdx < count; brickIdx += ProbeBrickPool.kBrickProbeCountTotal)
@@ -123,13 +113,13 @@ namespace UnityEngine.Rendering
                                     // Check if we need to do some extra check on this probe.
                                     bool hasFreeNeighbourhood = false;
                                     Bounds invalidatingTouchupBound;
-                                    if (s_ForceInvalidatedProbesAndTouchupVols.TryGetValue(cell.probePositions[shidx], out invalidatingTouchupBound))
+                                    if (m_BakingBatch.forceInvalidatedProbesAndTouchupVols.TryGetValue(cell.probePositions[shidx], out invalidatingTouchupBound))
                                     {
                                         int actualBrickIdx = brickIdx / ProbeBrickPool.kBrickProbeCountTotal;
                                         float brickSize = ProbeReferenceVolume.CellSize(cell.bricks[actualBrickIdx].subdivisionLevel);
                                         Vector3 position = cell.probePositions[shidx];
                                         probesToRestore.Add(new Vector3Int(ix, iy, iz));
-                                        var searchDistance = (brickSize * m_BakingProfile.minBrickSize) / ProbeBrickPool.kBrickCellCount;
+                                        var searchDistance = (brickSize * m_ProfileInfo.minBrickSize) / ProbeBrickPool.kBrickCellCount;
                                         hasFreeNeighbourhood = NeighbourhoodIsEmptySpace(position, searchDistance, invalidatingTouchupBound);
                                     }
                                     probeHasEmptySpaceInGrid[shidx] = hasFreeNeighbourhood;

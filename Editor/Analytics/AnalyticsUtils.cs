@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.Analytics;
@@ -16,19 +17,18 @@ namespace UnityEditor.Rendering
     {
         const string k_VendorKey = "unity.srp";
 
-        internal static bool TryRegisterEvent(string eventName, int version = 1, int maxEventPerHour = 100, int maxNumberOfElements = 1000)
+        internal static void SendData(IAnalytic analytic)
         {
-             if (!EditorAnalytics.enabled) return false;
-             if (EditorAnalytics.RegisterEventWithLimit(eventName, maxEventPerHour, maxNumberOfElements, k_VendorKey, version) != AnalyticsResult.Ok) return false;
-             return true;
+             EditorAnalytics.SendAnalytic(analytic);
         }
 
-        internal static void SendData<T>(T data, string eventName, int version)
-        {
-             EditorAnalytics.SendEventWithLimit(eventName, data, version);
-        }
-
-        internal static IEnumerable<FieldInfo> GetSerializableFields(this Type type, bool removeObsolete = false)
+        /// <summary>
+        /// Gets a list of the serializable fields of the given type
+        /// </summary>
+        /// <param name="type">The type to get fields that are serialized.</param>
+        /// <param name="removeObsolete">If obsolete fields are taken into account</param>
+        /// <returns>The collection of <see cref="FieldInfo"/> that are serialized for this type</returns>
+        public static IEnumerable<FieldInfo> GetSerializableFields(this Type type, bool removeObsolete = false)
         {
             var members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -94,7 +94,7 @@ namespace UnityEditor.Rendering
             {
                 for (int i = 0; i < list.Count; i++)
                 {
-                    tempList.Add(list[i].ToString());
+                    tempList.Add(list[i] != null ? list[i].ToString() : "null");
                 }
 
                 var arrayValues = string.Join(",", tempList);
@@ -123,7 +123,7 @@ namespace UnityEditor.Rendering
                     }
                     else if (t.IsPrimitive || t.IsEnum)
                     {
-                        diff[field.Name] = valueCurrent.ToString();
+                        diff[field.Name] = ConvertPrimitiveWithInvariants(valueCurrent);
                     }
                     else if (t.IsArray && valueCurrent is IList valueCurrentList)
                     {
@@ -177,7 +177,7 @@ namespace UnityEditor.Rendering
                     else if (t.IsPrimitive || t.IsEnum)
                     {
                         if (!valueCurrent.Equals(valueDefault))
-                            diff[field.Name] = valueCurrent.ToString();
+                            diff[field.Name] = ConvertPrimitiveWithInvariants(valueCurrent);
                     }
                     else if (t.IsArray && valueCurrent is IList valueCurrentList)
                     {
@@ -205,6 +205,13 @@ namespace UnityEditor.Rendering
             return diff;
         }
 
+        static string ConvertPrimitiveWithInvariants(object obj)
+        {
+            if (obj is IConvertible convertible)
+                return convertible.ToString(CultureInfo.InvariantCulture);
+            return obj.ToString();
+        }
+
         static string[] ToStringArray(Dictionary<string, string> diff)
         {
             var changedSettings = new string[diff.Count];
@@ -224,7 +231,7 @@ namespace UnityEditor.Rendering
         /// <param name="current">The current object to obtain the fields and values.</param>
         /// <param name="compareAndSimplifyWithDefault">If a comparison against the default value must be done.</param>
         /// <returns>The nested columns in form of {key.nestedKey : value} </returns>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="ArgumentNullException">Throws an exception if current parameter is null.</exception>
         public static string[] ToNestedColumn<T>([DisallowNull] this T current, bool compareAndSimplifyWithDefault = false)
             where T : new()
         {
@@ -255,6 +262,29 @@ namespace UnityEditor.Rendering
             return ToStringArray(diff);
         }
 
+        /// <summary>
+        /// Obtains the Serialized fields and values in form of nested columns for BigQuery
+        /// https://cloud.google.com/bigquery/docs/nested-repeated
+        /// </summary>
+        /// <typeparam name="T">The given type</typeparam>
+        /// <param name="current">The current object to obtain the fields and values.</param>
+        /// <param name="defaultInstance">The default instance to compare values</param>
+        /// <returns>The nested columns in form of {key.nestedKey : value} </returns>
+        /// <exception cref="ArgumentNullException">Throws an exception if the current or defaultInstance parameters are null.</exception>
+        public static string[] ToNestedColumn<T>([DisallowNull] this T current, T defaultInstance)
+        {
+            if (current == null)
+                throw new ArgumentNullException(nameof(current));
+
+            if (defaultInstance == null)
+                throw new ArgumentNullException(nameof(defaultInstance));
+
+            var type = current.GetType();
+
+            Dictionary<string, string> diff = GetDiffAsDictionary(type, current, defaultInstance);
+            return ToStringArray(diff);
+        }
+
 
         /// <summary>
         /// Obtains the Serialized fields and values in form of nested columns for BigQuery
@@ -265,7 +295,7 @@ namespace UnityEditor.Rendering
         /// <param name="defaultObject">The default object</param>
         /// <param name="compareAndSimplifyWithDefault">If a comparison against the default value must be done.</param>
         /// <returns>The nested columns in form of {key.nestedKey : value} </returns>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="ArgumentNullException">Throws an exception if the current parameter is null.</exception>
         public static string[] ToNestedColumnWithDefault<T>([DisallowNull] this T current, [DisallowNull] T defaultObject, bool compareAndSimplifyWithDefault = false)
         {
             if (current == null)

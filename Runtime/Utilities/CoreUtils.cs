@@ -1,6 +1,7 @@
 using System;
-using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using UnityEngine.Experimental.Rendering;
 
 namespace UnityEngine.Rendering
@@ -206,6 +207,23 @@ namespace UnityEngine.Rendering
                 }
 
                 return m_EmptyUAV;
+            }
+        }
+
+        static GraphicsBuffer m_EmptyBuffer;
+        /// <summary>
+        /// Empty 4-Byte buffer resource usable as a dummy.
+        /// </summary>
+        public static GraphicsBuffer emptyBuffer
+        {
+            get
+            {
+                if (m_EmptyBuffer == null || !m_EmptyBuffer.IsValid())
+                {
+                    m_EmptyBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
+                }
+
+                return m_EmptyBuffer;
             }
         }
 
@@ -608,6 +626,7 @@ namespace UnityEngine.Rendering
         /// <param name="depthSlice">Depth slice that should be bound as a render texture if applicable.</param>
         public static void SetRenderTarget(CommandBuffer cmd, RTHandle colorBuffer, RTHandle depthBuffer, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -617,6 +636,7 @@ namespace UnityEngine.Rendering
 
                 Debug.Assert(cw == dw && ch == dh);
             }
+#endif
 
             SetRenderTarget(cmd, colorBuffer, depthBuffer, ClearFlag.None, Color.clear, miplevel, cubemapFace, depthSlice);
         }
@@ -633,6 +653,7 @@ namespace UnityEngine.Rendering
         /// <param name="depthSlice">Depth slice that should be bound as a render texture if applicable.</param>
         public static void SetRenderTarget(CommandBuffer cmd, RTHandle colorBuffer, RTHandle depthBuffer, ClearFlag clearFlag, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -642,6 +663,7 @@ namespace UnityEngine.Rendering
 
                 Debug.Assert(cw == dw && ch == dh);
             }
+#endif
 
             SetRenderTarget(cmd, colorBuffer, depthBuffer, clearFlag, Color.clear, miplevel, cubemapFace, depthSlice);
         }
@@ -659,6 +681,7 @@ namespace UnityEngine.Rendering
         /// <param name="depthSlice">Depth slice that should be bound as a render texture if applicable.</param>
         public static void SetRenderTarget(CommandBuffer cmd, RTHandle colorBuffer, RTHandle depthBuffer, ClearFlag clearFlag, Color clearColor, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -668,6 +691,7 @@ namespace UnityEngine.Rendering
 
                 Debug.Assert(cw == dw && ch == dh);
             }
+#endif
 
             SetRenderTarget(cmd, colorBuffer.nameID, depthBuffer.nameID, miplevel, cubemapFace, depthSlice);
             SetViewportAndClear(cmd, colorBuffer, clearFlag, clearColor);
@@ -711,6 +735,7 @@ namespace UnityEngine.Rendering
             RTHandle depthBuffer, RenderBufferLoadAction depthLoadAction, RenderBufferStoreAction depthStoreAction,
             ClearFlag clearFlag, Color clearColor, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -720,6 +745,7 @@ namespace UnityEngine.Rendering
 
                 Debug.Assert(cw == dw && ch == dh);
             }
+#endif
 
             SetRenderTarget(cmd, colorBuffer.nameID, colorLoadAction, colorStoreAction, depthBuffer.nameID, depthLoadAction, depthStoreAction, miplevel, cubemapFace, depthSlice);
             SetViewportAndClear(cmd, colorBuffer, clearFlag, clearColor);
@@ -797,7 +823,7 @@ namespace UnityEngine.Rendering
         /// <param name="msaaSamples">Number of MSAA samples.</param>
         /// <returns>Generated names bassed on the provided parameters.</returns>
         public static string GetRenderTargetAutoName(int width, int height, int depth, RenderTextureFormat format, string name, bool mips = false, bool enableMSAA = false, MSAASamples msaaSamples = MSAASamples.None)
-            => GetRenderTargetAutoName(width, height, depth, format.ToString(), TextureDimension.None, name, mips, enableMSAA, msaaSamples, dynamicRes: false);
+            => GetRenderTargetAutoName(width, height, depth, format.ToString(), TextureDimension.None, name, mips, enableMSAA, msaaSamples, dynamicRes: false, dynamicResExplicit: false);
 
         /// <summary>
         /// Generate a name based on render texture parameters.
@@ -812,7 +838,7 @@ namespace UnityEngine.Rendering
         /// <param name="msaaSamples">Number of MSAA samples.</param>
         /// <returns>Generated names bassed on the provided parameters.</returns>
         public static string GetRenderTargetAutoName(int width, int height, int depth, GraphicsFormat format, string name, bool mips = false, bool enableMSAA = false, MSAASamples msaaSamples = MSAASamples.None)
-            => GetRenderTargetAutoName(width, height, depth, format.ToString(), TextureDimension.None, name, mips, enableMSAA, msaaSamples, dynamicRes: false);
+            => GetRenderTargetAutoName(width, height, depth, format.ToString(), TextureDimension.None, name, mips, enableMSAA, msaaSamples, dynamicRes: false, dynamicResExplicit: false);
 
         /// <summary>
         /// Generate a name based on render texture parameters.
@@ -827,11 +853,12 @@ namespace UnityEngine.Rendering
         /// <param name="enableMSAA">True if the texture is multisampled.</param>
         /// <param name="msaaSamples">Number of MSAA samples.</param>
         /// <param name="dynamicRes">True if the texture uses dynamic resolution.</param>
+        /// <param name="dynamicResExplicit">True if the texture uses dynamic resolution with explicit resize control.</param>
         /// <returns>Generated names bassed on the provided parameters.</returns>
-        public static string GetRenderTargetAutoName(int width, int height, int depth, GraphicsFormat format, TextureDimension dim, string name, bool mips = false, bool enableMSAA = false, MSAASamples msaaSamples = MSAASamples.None, bool dynamicRes = false)
-            => GetRenderTargetAutoName(width, height, depth, format.ToString(), dim, name, mips, enableMSAA, msaaSamples, dynamicRes);
+        public static string GetRenderTargetAutoName(int width, int height, int depth, GraphicsFormat format, TextureDimension dim, string name, bool mips = false, bool enableMSAA = false, MSAASamples msaaSamples = MSAASamples.None, bool dynamicRes = false, bool dynamicResExplicit = false)
+            => GetRenderTargetAutoName(width, height, depth, format.ToString(), dim, name, mips, enableMSAA, msaaSamples, dynamicRes, dynamicResExplicit);
 
-        static string GetRenderTargetAutoName(int width, int height, int depth, string format, TextureDimension dim, string name, bool mips, bool enableMSAA, MSAASamples msaaSamples, bool dynamicRes)
+        static string GetRenderTargetAutoName(int width, int height, int depth, string format, TextureDimension dim, string name, bool mips, bool enableMSAA, MSAASamples msaaSamples, bool dynamicRes, bool dynamicResExplicit)
         {
             string result = string.Format("{0}_{1}x{2}", name, width, height);
 
@@ -850,7 +877,10 @@ namespace UnityEngine.Rendering
                 result = string.Format("{0}_{1}", result, msaaSamples.ToString());
 
             if (dynamicRes)
-                result = string.Format("{0}_{1}", result, "dynamic");
+                result = string.Format("{0}_{1}", result, "Dynamic");
+
+            if (dynamicResExplicit)
+                result = string.Format("{0}_{1}", result, "DynamicExplicit");
 
             return result;
         }
@@ -930,6 +960,19 @@ namespace UnityEngine.Rendering
             MaterialPropertyBlock properties = null, int shaderPassId = 0)
         {
             commandBuffer.DrawProcedural(Matrix4x4.identity, material, shaderPassId, MeshTopology.Triangles, 3, 1, properties);
+        }
+
+        /// <summary>
+        /// Draws a full screen triangle.
+        /// </summary>
+        /// <param name="commandBuffer">RasterCommandBuffer used for rendering commands.</param>
+        /// <param name="material">Material used on the full screen triangle.</param>
+        /// <param name="properties">Optional material property block for the provided material.</param>
+        /// <param name="shaderPassId">Index of the material pass.</param>
+        public static void DrawFullScreen(RasterCommandBuffer commandBuffer, Material material,
+            MaterialPropertyBlock properties = null, int shaderPassId = 0)
+        {
+            DrawFullScreen(commandBuffer.m_WrappedCommandBuffer, material, properties, shaderPassId);
         }
 
         /// <summary>
@@ -1032,6 +1075,9 @@ namespace UnityEngine.Rendering
         /// <returns>A new Material instance using the shader found at the provided path.</returns>
         public static Material CreateEngineMaterial(string shaderPath)
         {
+            if (string.IsNullOrEmpty(shaderPath))
+                throw new ArgumentException(nameof(shaderPath));
+
             Shader shader = Shader.Find(shaderPath);
             if (shader == null)
             {
@@ -1039,11 +1085,7 @@ namespace UnityEngine.Rendering
                 return null;
             }
 
-            var mat = new Material(shader)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            return mat;
+            return CreateEngineMaterial(shader);
         }
 
         /// <summary>
@@ -1060,11 +1102,11 @@ namespace UnityEngine.Rendering
                 return null;
             }
 
-            var mat = new Material(shader)
+
+            return new Material(shader)
             {
                 hideFlags = HideFlags.HideAndDontSave
             };
-            return mat;
         }
 
         /// <summary>
@@ -1106,14 +1148,43 @@ namespace UnityEngine.Rendering
                 cmd.DisableShaderKeyword(keyword);
         }
 
+        /// <summary>
+        /// Set a global keyword using a RasterCommandBuffer
+        /// </summary>
+        /// <param name="cmd">CommandBuffer on which to set the global keyword.</param>
+        /// <param name="keyword">Keyword to be set.</param>
+        /// <param name="state">Value of the keyword to be set.</param>
+        public static void SetKeyword(BaseCommandBuffer cmd, string keyword, bool state)
+        {
+            if (state)
+                cmd.m_WrappedCommandBuffer.EnableShaderKeyword(keyword);
+            else
+                cmd.m_WrappedCommandBuffer.DisableShaderKeyword(keyword);
+        }
+
         // Caution: such a call should not be use interlaced with command buffer command, as it is immediate
         /// <summary>
-        /// Set a keyword immediatly on a Material.
+        /// Set a keyword immediately on a Material.
         /// </summary>
         /// <param name="material">Material on which to set the keyword.</param>
         /// <param name="keyword">Keyword to set on the material.</param>
         /// <param name="state">Value of the keyword to set on the material.</param>
         public static void SetKeyword(Material material, string keyword, bool state)
+        {
+            if (state)
+                material.EnableKeyword(keyword);
+            else
+                material.DisableKeyword(keyword);
+        }
+
+        // Caution: such a call should not be use interlaced with command buffer command, as it is immediate
+        /// <summary>
+        /// Set a keyword immediately on a Material.
+        /// </summary>
+        /// <param name="material">Material on which to set the keyword.</param>
+        /// <param name="keyword">Keyword to set on the material.</param>
+        /// <param name="state">Value of the keyword to set on the material.</param>
+        public static void SetKeyword(Material material, LocalKeyword keyword, bool state)
         {
             if (state)
                 material.EnableKeyword(keyword);
@@ -1402,21 +1473,6 @@ namespace UnityEngine.Rendering
             return enabled;
         }
 
-#if UNITY_EDITOR
-        static Func<List<UnityEditor.MaterialEditor>> materialEditors;
-
-        static CoreUtils()
-        {
-            //quicker than standard reflection as it is compiled
-            System.Reflection.FieldInfo field = typeof(UnityEditor.MaterialEditor).GetField("s_MaterialEditors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-            var fieldExpression = System.Linq.Expressions.Expression.Field(null, field);
-            var lambda = System.Linq.Expressions.Expression.Lambda<Func<List<UnityEditor.MaterialEditor>>>(fieldExpression);
-            materialEditors = lambda.Compile();
-            LoadSceneViewMethods();
-        }
-
-#endif
-
         /// <summary>
         /// Returns true if "Fog" is enabled for the view associated with the given camera.
         /// </summary>
@@ -1431,11 +1487,11 @@ namespace UnityEngine.Rendering
             {
                 fogEnable = false;
 
+                var sceneViews = UnityEditor.SceneView.sceneViews;
                 // Determine whether the "Animated Materials" checkbox is checked for the current view.
-                for (int i = 0; i < UnityEditor.SceneView.sceneViews.Count; i++)
+                for (int i = 0; i < sceneViews.Count; i++)
                 {
-                    var sv = UnityEditor.SceneView.sceneViews[i] as UnityEditor.SceneView;
-                    if (sv.camera == camera && sv.sceneViewState.fogEnabled)
+                    if (sceneViews[i] is UnityEditor.SceneView sv && sv.camera == camera && sv.sceneViewState.fogEnabled)
                     {
                         fogEnable = true;
                         break;
@@ -1454,19 +1510,20 @@ namespace UnityEngine.Rendering
         public static bool IsSceneFilteringEnabled()
         {
 #if UNITY_EDITOR && UNITY_2021_2_OR_NEWER
-            for (int i = 0; i < UnityEditor.SceneView.sceneViews.Count; i++)
+            var sceneViews = UnityEditor.SceneView.sceneViews;
+            for (int i = 0; i < sceneViews.Count; i++)
             {
-                var sv = UnityEditor.SceneView.sceneViews[i] as UnityEditor.SceneView;
-                if (sv.isUsingSceneFiltering) return true;
+                if (sceneViews[i] is UnityEditor.SceneView sv && sv.isUsingSceneFiltering)
+                    return true;
             }
 #endif
             return false;
         }
 
 #if UNITY_EDITOR
-        static Func<int> GetSceneViewPrefabStageContext;
+        static Func<int> s_GetSceneViewPrefabStageContextFunc = null;
 
-        static void LoadSceneViewMethods()
+        static Func<int> LoadSceneViewMethods()
         {
             var stageNavigatorManager = typeof(UnityEditor.SceneManagement.PrefabStage).Assembly.GetType("UnityEditor.SceneManagement.StageNavigationManager");
             var instance = stageNavigatorManager.GetProperty("instance", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.FlattenHierarchy);
@@ -1474,9 +1531,8 @@ namespace UnityEngine.Rendering
 
             var renderModeAccessor = System.Linq.Expressions.Expression.Property(System.Linq.Expressions.Expression.Property(null, instance), renderMode);
             var internalRenderModeLambda = System.Linq.Expressions.Expression.Lambda<Func<int>>(System.Linq.Expressions.Expression.Convert(renderModeAccessor, typeof(int)));
-            GetSceneViewPrefabStageContext = internalRenderModeLambda.Compile();
+            return internalRenderModeLambda.Compile();
         }
-#endif
 
         /// <summary>
         /// Returns true if the currently opened prefab stage context is set to Hidden.
@@ -1484,12 +1540,16 @@ namespace UnityEngine.Rendering
         /// <returns>True if the currently opened prefab stage context is set to Hidden.</returns>
         public static bool IsSceneViewPrefabStageContextHidden()
         {
-#if UNITY_EDITOR
-            return GetSceneViewPrefabStageContext() == 2; // 2 is hidden, see ContextRenderMode enum
-#else
-            return false;
-#endif
+            s_GetSceneViewPrefabStageContextFunc ??= LoadSceneViewMethods();
+            return s_GetSceneViewPrefabStageContextFunc() == 2; // 2 is hidden, see ContextRenderMode enum
         }
+#else
+        /// <summary>
+        /// Returns true if the currently opened prefab stage context is set to Hidden.
+        /// </summary>
+        /// <returns>True if the currently opened prefab stage context is set to Hidden.</returns>
+        public static bool IsSceneViewPrefabStageContextHidden() => false;
+#endif
 
         /// <summary>
         /// Draw a renderer list.
@@ -1499,9 +1559,10 @@ namespace UnityEngine.Rendering
         /// <param name="rendererList">Renderer List to render.</param>
         public static void DrawRendererList(ScriptableRenderContext renderContext, CommandBuffer cmd, UnityEngine.Rendering.RendererList rendererList)
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (!rendererList.isValid)
                 throw new ArgumentException("Invalid renderer list provided to DrawRendererList");
-
+#endif
             cmd.DrawRendererList(rendererList);
         }
 
@@ -1553,6 +1614,38 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
+        /// Gets the Mip Count for a given size
+        /// </summary>
+        /// <param name="size">The size to obtain the mip count</param>
+        /// <returns>The mip count</returns>
+        public static int GetMipCount(int size)
+        {
+            return Mathf.FloorToInt(Mathf.Log(size, 2.0f)) + 1;
+        }
+
+        /// <summary>
+        /// Gets the Mip Count for a given size
+        /// </summary>
+        /// <param name="size">The size to obtain the mip count</param>
+        /// <returns>The mip count</returns>
+        public static int GetMipCount(float size)
+        {
+            return Mathf.FloorToInt(Mathf.Log(size, 2.0f)) + 1;
+        }
+
+        /// <summary>
+        /// Divides one value by another and rounds up to the next integer.
+        /// This is often used to calculate dispatch dimensions for compute shaders.
+        /// </summary>
+        /// <param name="value">The value to divide.</param>
+        /// <param name="divisor">The value to divide by.</param>
+        /// <returns>The value divided by the divisor rounded up to the next integer.</returns>
+        public static int DivRoundUp(int value, int divisor)
+        {
+            return (value + (divisor - 1)) / divisor;
+        }
+
+        /// <summary>
         /// Get the last declared value from an enum Type
         /// </summary>
         /// <typeparam name="T">Type of the enum</typeparam>
@@ -1601,33 +1694,56 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Create any missing folder in the file path given.
-        /// Path must use '/' separator
+        /// Create any missing folders in the file path given.
         /// </summary>
-        /// <param name="filePath">Path to a file or to a folder (ending with '/') to ensure existance of each sub folder in it. </param>
+        /// <param name="filePath">File or folder (ending with '/') path to ensure existence of each subfolder in. </param>
         public static void EnsureFolderTreeInAssetFilePath(string filePath)
         {
-            void Recurse(string _folderPath)
+            var path = filePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+            if (!path.StartsWith("Assets" + Path.DirectorySeparatorChar, StringComparison.CurrentCultureIgnoreCase))
+                throw new ArgumentException($"Path should start with \"Assets/\". Got {filePath}.", filePath);
+            var folderPath = Path.GetDirectoryName(path);
+
+            if (!UnityEditor.AssetDatabase.IsValidFolder(folderPath))
             {
-                int lastSeparator = _folderPath.LastIndexOf('/');
-                if (lastSeparator == -1)
-                    return;
-
-                string rootPath = _folderPath.Substring(0, lastSeparator);
-
-                Recurse(rootPath);
-
-                string folder = _folderPath.Substring(lastSeparator + 1);
-                if (!UnityEditor.AssetDatabase.IsValidFolder(_folderPath))
-                    UnityEditor.AssetDatabase.CreateFolder(rootPath, folder);
+                var folderNames = folderPath.Split(Path.DirectorySeparatorChar);
+                string rootPath = "";
+                foreach (var folderName in folderNames)
+                {
+                    var newPath = rootPath + folderName;
+                    if (!UnityEditor.AssetDatabase.IsValidFolder(newPath))
+                        UnityEditor.AssetDatabase.CreateFolder(rootPath.TrimEnd(Path.DirectorySeparatorChar), folderName);
+                    rootPath = newPath + Path.DirectorySeparatorChar;
+                }
             }
-
-            if (!filePath.StartsWith("assets/", System.StringComparison.CurrentCultureIgnoreCase))
-                throw new System.ArgumentException($"Path should start with \"Assets/\". Got {filePath}.", filePath);
-
-            Recurse(filePath.Substring(0, filePath.LastIndexOf('/')));
         }
-
 #endif
+
+        /// <summary>
+        /// Calcualte frustum corners at specified camera depth given projection matrix and depth z.
+        /// </summary>
+        /// <param name="proj"> Projection matrix used by the view frustrum. </param>
+        /// <param name="z"> Z-depth from the camera origin at which the corners will be calculated. </param>
+        /// <returns> Return conner vectors for left-bottom, right-bottm, right-top, left-top in view space. </returns>
+        public static Vector3[] CalculateViewSpaceCorners(Matrix4x4 proj, float z)
+        {
+            Vector3[] outCorners = new Vector3[4];
+            Matrix4x4 invProj = Matrix4x4.Inverse(proj);
+
+            // We transform a point further than near plane and closer than far plane, for precision reasons.
+            // In a perspective camera setup (near=0.1, far=1000), a point at 0.95 projected depth is about
+            // 5 units from the camera.
+            const float projZ = 0.95f;
+            outCorners[0] = invProj.MultiplyPoint(new Vector3(-1, -1, projZ));
+            outCorners[1] = invProj.MultiplyPoint(new Vector3(1, -1, projZ));
+            outCorners[2] = invProj.MultiplyPoint(new Vector3(1, 1, projZ));
+            outCorners[3] = invProj.MultiplyPoint(new Vector3(-1, 1, projZ));
+
+            // Rescale vectors to have the desired z distance.
+            for (int r = 0; r < 4; ++r)
+                outCorners[r] *= z / (-outCorners[r].z);
+
+            return outCorners;
+        }
     }
 }

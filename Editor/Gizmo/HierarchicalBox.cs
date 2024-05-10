@@ -66,7 +66,7 @@ namespace UnityEditor.Rendering
     /// </example>
     public class HierarchicalBox
     {
-        const float k_HandleSizeCoef = 0.05f;
+        const float k_HandleSizeCoef = 0.07f;
         static Material k_Material_Cache;
         static Material k_Material => (k_Material_Cache == null || k_Material_Cache.Equals(null) ? (k_Material_Cache = new Material(Shader.Find("Hidden/UnlitTransparentColored"))) : k_Material_Cache);
         static Mesh k_MeshQuad_Cache;
@@ -83,6 +83,7 @@ namespace UnityEditor.Rendering
         Color m_WireframeColorBehind;
         int[] m_ControlIDs = new int[6] { 0, 0, 0, 0, 0, 0 };
         bool m_MonoHandle = true;
+        bool m_AllowNegativeSize = false;
 
         Material material
         {
@@ -101,6 +102,11 @@ namespace UnityEditor.Rendering
         /// Note that if there is several handles, they will use the polychrome colors.
         /// </summary>
         public bool monoHandle { get => m_MonoHandle; set => m_MonoHandle = value; }
+
+        /// <summary>
+        /// Allow to switch between the mode where box size can be negative or not.
+        /// </summary>
+        public bool allowNegativeSize { get => m_AllowNegativeSize; set => m_AllowNegativeSize = value; }
 
         /// <summary>The position of the center of the box in Handle.matrix space.</summary>
         public Vector3 center { get; set; }
@@ -452,7 +458,7 @@ namespace UnityEditor.Rendering
                     var max = new Vector3(rightPosition.x, topPosition.y, frontPosition.z);
                     var min = new Vector3(leftPosition.x, bottomPosition.y, backPosition.z);
 
-                    if (!useSymetry && !useHomothety)
+                    if (!useSymetry && !useHomothety && !allowNegativeSize)
                     {
                         //ensure that the box face are still facing outside
                         for (int axis = 0; axis < 3; ++axis)
@@ -486,6 +492,6 @@ namespace UnityEditor.Rendering
             }
         }
 
-        Color GetHandleColor(NamedFace name) => monoHandle ? m_MonochromeHandleColor : m_PolychromeHandleColor[(int)name];
+        Color GetHandleColor(NamedFace name) => monoHandle ? m_MonochromeHandleColor : GizmoUtility.GetHandleColor(m_PolychromeHandleColor[(int)name]);
     }
 }

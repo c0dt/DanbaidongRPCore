@@ -67,7 +67,7 @@ namespace UnityEngine.Rendering
 
             ProbesOcclusion = Vector4.one;
         }
-        
+
         /// <summary>
         /// Construct an instance of <c>SHCoefficients</c> that represents the same spherical
         /// harmonic coefficients as the parameter.
@@ -118,7 +118,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// GetHashCode implementation.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Returns a hashcode based on SHA coefficients.</returns>
         public override int GetHashCode()
         {
             return HashCode.Combine(SHAr, SHAg, SHAb, SHBr, SHBg, SHBb, SHC, ProbesOcclusion);
@@ -146,7 +146,7 @@ namespace UnityEngine.Rendering
             return !left.Equals(right);
         }
     }
-	
+
     /// <summary>
     /// Contains default values for built-in properties that the user is expected to manually
     /// provide for <c>DOTS_INSTANCING_ON</c> shaders. The struct layout matches the
@@ -228,7 +228,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// GetHashCode implementation.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Returns a hashcode based on ProbesOcclusion, SpecCube and SH coefficients parameters</returns>
         public override int GetHashCode()
         {
             return HashCode.Combine(ProbesOcclusion, SpecCube0_HDR, SpecCube1_HDR, SHCoefficients);

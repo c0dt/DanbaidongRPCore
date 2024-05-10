@@ -14,10 +14,14 @@ namespace UnityEngine.Rendering
         // Holds the state of _all_ component types you can possibly add on volumes
         internal readonly Dictionary<Type, VolumeComponent> components = new();
 
-        // Holds the default value for every volume parameter for faster per-frame stack reset.
-        internal (VolumeParameter parameter, VolumeParameter defaultValue)[] defaultParameters;
+        // Flat list of every volume parameter for faster per-frame stack reset.
+        internal VolumeParameter[] parameters;
 
+        // Flag indicating that some properties have received overrides, therefore they must be reset in the next update.
         internal bool requiresReset = true;
+
+        // Flag indicating that default state has changed, therefore all properties in the stack must be reset in the next update.
+        internal bool requiresResetForAllProperties = true;
 
         internal VolumeStack()
         {
@@ -30,41 +34,27 @@ namespace UnityEngine.Rendering
 
             components.Clear();
 
-            if (defaultParameters != null)
-            {
-                foreach (var tuple in defaultParameters)
-                {
-                    tuple.defaultValue?.Release();
-                }
-
-                defaultParameters = null;
-            }
+            parameters = null;
         }
 
-        internal void Reload(List<VolumeComponent> componentDefaultStates)
+        internal void Reload(Type[] componentTypes)
         {
             Clear();
 
             requiresReset = true;
+            requiresResetForAllProperties = true;
 
-            List<(VolumeParameter parameter, VolumeParameter defaultValue)> defaultParametersList = new();
-            foreach (var defaultVolumeComponent in componentDefaultStates)
+            List<VolumeParameter> parametersList = new();
+            foreach (var type in componentTypes)
             {
-                var type = defaultVolumeComponent.GetType();
                 var component = (VolumeComponent)ScriptableObject.CreateInstance(type);
                 components.Add(type, component);
-                
-                for (int i = 0; i < component.parameterList.Count; i++)
-                {
-                    defaultParametersList.Add(new()
-                    {
-                        parameter = component.parameters[i],
-                        defaultValue = defaultVolumeComponent.parameterList[i].Clone() as VolumeParameter,
-                    });
-                }
+                parametersList.AddRange(component.parameters);
             }
 
-            defaultParameters = defaultParametersList.ToArray();
+            parameters = parametersList.ToArray();
+
+            isValid = true;
         }
 
         /// <summary>
@@ -95,12 +85,19 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Cleans up the content of this stack. Once a <c>VolumeStack</c> is disposed, it souldn't
+        /// Cleans up the content of this stack. Once a <c>VolumeStack</c> is disposed, it shouldn't
         /// be used anymore.
         /// </summary>
         public void Dispose()
         {
             Clear();
+
+            isValid = false;
         }
+
+        /// <summary>
+        /// Check if the stack is in valid state and can be used.
+        /// </summary>
+        public bool isValid { get; private set; }
     }
 }

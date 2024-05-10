@@ -4,7 +4,7 @@
 
 #ifndef PROBEGIBAKING_DILATE_CS_HLSL
 #define PROBEGIBAKING_DILATE_CS_HLSL
-// Generated from UnityEngine.Rendering.ProbeGIBaking+DilatedProbe
+// Generated from UnityEngine.Rendering.AdaptiveProbeVolumes+DilatedProbe
 // PackingRules = Exact
 struct DilatedProbe
 {
@@ -17,6 +17,8 @@ struct DilatedProbe
     float3 L2_2;
     float3 L2_3;
     float3 L2_4;
+    float4 SO_L0L1;
+    float3 SO_Direction;
 };
 
 

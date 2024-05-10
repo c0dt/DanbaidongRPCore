@@ -9,32 +9,32 @@
 // Transmittance(x, z) = Transmittance(x, y) * Transmittance(y, z)
 // Integral{a, b}{Transmittance(0, t) dt} = Transmittance(0, a) * Integral{a, b}{Transmittance(0, t - a) dt}
 
-real TransmittanceFromOpticalDepth(real opticalDepth)
+float TransmittanceFromOpticalDepth(float opticalDepth)
 {
     return exp(-opticalDepth);
 }
 
-real3 TransmittanceFromOpticalDepth(real3 opticalDepth)
+float3 TransmittanceFromOpticalDepth(float3 opticalDepth)
 {
     return exp(-opticalDepth);
 }
 
-real OpacityFromOpticalDepth(real opticalDepth)
+float OpacityFromOpticalDepth(float opticalDepth)
 {
     return 1 - TransmittanceFromOpticalDepth(opticalDepth);
 }
 
-real3 OpacityFromOpticalDepth(real3 opticalDepth)
+float3 OpacityFromOpticalDepth(float3 opticalDepth)
 {
     return 1 - TransmittanceFromOpticalDepth(opticalDepth);
 }
 
-real OpticalDepthFromOpacity(real opacity)
+float OpticalDepthFromOpacity(float opacity)
 {
     return -log(1 - opacity);
 }
 
-real3 OpticalDepthFromOpacity(real3 opacity)
+float3 OpticalDepthFromOpacity(float3 opacity)
 {
     return -log(1 - opacity);
 }
@@ -125,24 +125,24 @@ real TransmittanceIntegralHomogeneousMedium(real extinction, real intervalLength
 //
 
 // Can be used to scale base extinction and scattering coefficients.
-real ComputeHeightFogMultiplier(real height, real baseHeight, real2 heightExponents)
+float ComputeHeightFogMultiplier(real height, real baseHeight, real2 heightExponents)
 {
     real h    = max(height - baseHeight, 0);
-    real rcpH = heightExponents.x;
+    float rcpH = heightExponents.x;
 
     return exp(-h * rcpH);
 }
 
 // Optical depth between two endpoints.
-real OpticalDepthHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
+float OpticalDepthHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
                            real cosZenith, real startHeight, real intervalLength)
 {
     // Height fog is composed of two slices of optical depth:
     // - homogeneous fog below 'baseHeight': d = k * t
     // - exponential fog above 'baseHeight': d = Integrate[k * e^(-(h + z * x) / H) dx, {x, 0, t}]
 
-    real H          = heightExponents.y;
-    real rcpH       = heightExponents.x;
+    float H          = heightExponents.y;
+    float rcpH       = heightExponents.x;
     real Z          = cosZenith;
     real absZ       = max(abs(cosZenith), 0.001f);
     real rcpAbsZ    = rcp(absZ);
@@ -153,17 +153,17 @@ real OpticalDepthHeightFog(real baseExtinction, real baseHeight, real2 heightExp
 
     real homFogDist = clamp((baseHeight - minHeight) * rcpAbsZ, 0, intervalLength);
     real expFogDist = intervalLength - homFogDist;
-    real expFogMult = exp(-h * rcpH) * (1 - exp(-expFogDist * absZ * rcpH)) * (rcpAbsZ * H);
+    float expFogMult = exp(-h * rcpH) * (1 - exp(-expFogDist * absZ * rcpH)) * (rcpAbsZ * H);
 
     return baseExtinction * (homFogDist + expFogMult);
 }
 
 // This version of the function assumes the interval of infinite length.
-real OpticalDepthHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
+float OpticalDepthHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
                            real cosZenith, real startHeight)
 {
-    real H          = heightExponents.y;
-    real rcpH       = heightExponents.x;
+    float H          = heightExponents.y;
+    float rcpH       = heightExponents.x;
     real Z          = cosZenith;
     real absZ       = max(abs(cosZenith), REAL_EPS);
     real rcpAbsZ    = rcp(absZ);
@@ -172,23 +172,23 @@ real OpticalDepthHeightFog(real baseExtinction, real baseHeight, real2 heightExp
     real h          = max(minHeight - baseHeight, 0);
 
     real homFogDist = max((baseHeight - minHeight) * rcpAbsZ, 0);
-    real expFogMult = exp(-h * rcpH) * (rcpAbsZ * H);
+    float expFogMult = exp(-h * rcpH) * (rcpAbsZ * H);
 
     return baseExtinction * (homFogDist + expFogMult);
 }
 
-real TransmittanceHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
+float TransmittanceHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
                             real cosZenith, real startHeight, real intervalLength)
 {
-    real od = OpticalDepthHeightFog(baseExtinction, baseHeight, heightExponents,
+    float od = OpticalDepthHeightFog(baseExtinction, baseHeight, heightExponents,
                                     cosZenith, startHeight, intervalLength);
     return TransmittanceFromOpticalDepth(od);
 }
 
-real TransmittanceHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
+float TransmittanceHeightFog(real baseExtinction, real baseHeight, real2 heightExponents,
                             real cosZenith, real startHeight)
 {
-    real od = OpticalDepthHeightFog(baseExtinction, baseHeight, heightExponents,
+    float od = OpticalDepthHeightFog(baseExtinction, baseHeight, heightExponents,
                                     cosZenith, startHeight);
     return TransmittanceFromOpticalDepth(od);
 }
@@ -232,10 +232,10 @@ real HenyeyGreensteinPhaseFunction(real anisotropy, real cosTheta)
 
 // "Physically Based Rendering, 15.2.3 Sampling Phase Functions"
 bool SampleHenyeyGreenstein(real3 incomingDir,
-    real anisotropy,
-    real3 inputSample,
-    out real3 outgoingDir,
-    out real pdf)
+                            real anisotropy,
+                            real3 inputSample,
+                            out real3 outgoingDir,
+                            out real pdf)
 {
     real g = anisotropy;
 
@@ -261,8 +261,8 @@ bool SampleHenyeyGreenstein(real3 incomingDir,
     real sinPhi, cosPhi;
     sincos(phi, sinPhi, cosPhi);
     outgoingDir = sinTheta * cosPhi * coordsys[0] +
-        sinTheta * sinPhi * coordsys[1] +
-        cosTheta * coordsys[2];
+                  sinTheta * sinPhi * coordsys[1] +
+                  cosTheta *  coordsys[2];
     pdf = HenyeyGreensteinPhaseFunction(g, cosTheta);
 
     return any(pdf);
@@ -417,9 +417,22 @@ real3 TransmittanceColorAtDistanceToAbsorption(real3 transmittanceColor, real at
     return -log(transmittanceColor + REAL_EPS) / max(atDistance, REAL_EPS);
 }
 
+float ApplyExponentialFadeFactor(float fade, bool exponential, bool multiplyBlendMode)
+{
+    if (exponential)
+    {
+        if (multiplyBlendMode)
+            fade = 1 - PositivePow(abs(fade - 1), 2.2);
+        else
+            fade = PositivePow(fade, 2.2);
+    }
+    return fade;
+}
+
 float ComputeVolumeFadeFactor(float3 coordNDC, float dist,
                         float3 rcpPosFaceFade, float3 rcpNegFaceFade, bool invertFade,
-                        float rcpDistFadeLen, float endTimesRcpDistFadeLen, bool exponentialFalloff)
+                        float rcpDistFadeLen, float endTimesRcpDistFadeLen,
+                        bool exponentialFalloff, bool multiplyBlendMode)
 {
     float3 posF = Remap10(coordNDC, rcpPosFaceFade, rcpPosFaceFade);
     float3 negF = Remap01(coordNDC, rcpNegFaceFade, 0);
@@ -427,12 +440,17 @@ float ComputeVolumeFadeFactor(float3 coordNDC, float dist,
     float  fade = posF.x * posF.y * posF.z * negF.x * negF.y * negF.z;
 
     // We only apply exponential falloff on the Blend Distance and not Distance Fade
-    if (exponentialFalloff)
-        fade = PositivePow(fade, 2.2);
+    fade = ApplyExponentialFadeFactor(fade, exponentialFalloff, multiplyBlendMode);
 
     fade = dstF * (invertFade ? (1 - fade) : fade);
 
     return fade;
+}
+
+float ExtinctionFromMeanFreePath(float meanFreePath)
+{
+    // Keep in sync with kMinFogDistance
+    return rcp(max(0.05, meanFreePath));
 }
 
 #endif // UNITY_VOLUME_RENDERING_INCLUDED

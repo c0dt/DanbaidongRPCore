@@ -1,13 +1,52 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
+using UnityEngine.Scripting.APIUpdating;
 
-namespace UnityEngine.Experimental.Rendering.RenderGraphModule
+namespace UnityEngine.Rendering.RenderGraphModule
 {
+    internal struct TextureAccess
+    {
+        public TextureHandle textureHandle;
+        public int mipLevel;
+        public int depthSlice;
+        public AccessFlags flags;
+
+        public TextureAccess(TextureHandle handle, AccessFlags flags, int mipLevel, int depthSlice)
+        {
+            this.textureHandle = handle;
+            this.flags = flags;
+            this.mipLevel = mipLevel;
+            this.depthSlice = depthSlice;
+        }
+    }
+
+
     /// <summary>
-    /// Texture resource handle.
+    /// An abstract handle representing a texture resource as known by one particular record + execute of the render graph.
+    /// TextureHandles should not be used outside of the context of a render graph execution.
+    ///
+    /// A render graph needs to do additional state tracking on texture resources (lifetime, how is it used,...) to enable
+    /// this all textures relevant to the render graph need to be make known to it. A texture handle specifies such a texture as
+    /// known to the render graph.
+    ///
+    /// It is important to understand that a render graph texture handle does not necessarily represent an actual texture. For example
+    /// textures could be created the render graph that are only referenced by passes that are later culled when executing the graph.
+    /// Such textures would never be allocated as actual RenderTextures.
+    ///
+    /// Texture handles are only relevant to one particular record+execute phase of the render graph. After execution all texture
+    /// handles are invalidated. The system will catch texture handles from a different execution of the render graph but still
+    /// users should be careful to avoid keeping texture handles around from other render graph executions.
+    ///
+    /// Texture handles do not need to be disposed/freed (they are auto-invalidated at the end of graph execution). The RenderTextures they represent
+    /// are either freed by the render graph internally (when the handle was acquired through RenderGraph.CreateTexture) or explicitly managed by
+    /// some external system (when acquired through RenderGraph.ImportTexture).
+    ///
     /// </summary>
     [DebuggerDisplay("Texture ({handle.index})")]
+    [MovedFrom(true, "UnityEngine.Experimental.Rendering.RenderGraphModule", "UnityEngine.Rendering.RenderGraphModule")]
     public struct TextureHandle
     {
         private static TextureHandle s_NullHandle = new TextureHandle();
@@ -15,12 +54,24 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         /// <summary>
         /// Returns a null texture handle
         /// </summary>
-        /// <returns>A null texture handle.</returns>
+        /// <value>A null texture handle.</value>
         public static TextureHandle nullHandle { get { return s_NullHandle; } }
 
         internal ResourceHandle handle;
 
-        internal TextureHandle(int handle, bool shared = false) { this.handle = new ResourceHandle(handle, RenderGraphResourceType.Texture, shared); }
+        private bool builtin;
+
+        internal TextureHandle(in ResourceHandle h)
+        {
+            handle = h;
+            builtin = false;
+        }
+
+        internal TextureHandle(int handle, bool shared = false, bool builtin = false)
+        {
+            this.handle = new ResourceHandle(handle, RenderGraphResourceType.Texture, shared);
+            this.builtin = builtin;
+        }
 
         /// <summary>
         /// Cast to RenderTargetIdentifier
@@ -54,7 +105,22 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         /// Return true if the handle is valid.
         /// </summary>
         /// <returns>True if the handle is valid.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool IsValid() => handle.IsValid();
+
+        /// <summary>
+        /// Return true if the handle is a builtin handle managed by RenderGraph internally.
+        /// </summary>
+        /// <returns>True if the handle is a builtin handle.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsBuiltin() => this.builtin;
+
+        /// <summary>
+        /// Get the Descriptor of the texture. This simply calls RenderGraph.GetTextureDesc but is more easily discoverable through auto complete.
+        /// </summary>
+        /// <param name="renderGraph">The rendergraph instance that was used to create the texture on. Texture handles are a lightweight object, all information is stored on the RenderGraph itself.</param>
+        /// <returns>The texture descriptor for the given texture handle.</returns>
+        public TextureDesc GetDescriptor(RenderGraph renderGraph) { return renderGraph.GetTextureDesc(this); }
     }
 
     /// <summary>
@@ -128,8 +194,10 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         public MSAASamples msaaSamples;
         ///<summary>Bind texture multi sampled.</summary>
         public bool bindTextureMS;
-        ///<summary>Texture uses dynamic scaling.</summary>
+        ///<summary>[See Dynamic Resolution documentation](https://docs.unity3d.com/Manual/DynamicResolution.html)</summary>
         public bool useDynamicScale;
+        ///<summary>[See Dynamic Resolution documentation](https://docs.unity3d.com/Manual/DynamicResolution.html)</summary>
+        public bool useDynamicScaleExplicit;
         ///<summary>Memory less flag.</summary>
         public RenderTextureMemoryless memoryless;
         ///<summary>Special treatment of the VR eye texture used in stereoscopic rendering.</summary>
@@ -143,8 +211,8 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         ///<summary>Determines whether the texture will fallback to a black texture if it is read without ever writing to it.</summary>
         public bool fallBackToBlackTexture;
         ///<summary>
-        ///If all passes writing to a texture are culled by Dynamic Render Pass Culling, it will automatically fallback to a similar preallocated texture.\n
-        ///Set this to false to force the allocation.
+        ///If all passes writing to a texture are culled by Dynamic Render Pass Culling, it will automatically fallback to a similar preallocated texture.
+        ///Set this to true to force the allocation.
         ///</summary>
         public bool disableFallBackToImportedTexture;
 
@@ -153,6 +221,9 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         public bool clearBuffer;
         ///<summary>Clear color.</summary>
         public Color clearColor;
+
+        ///<summary>Texture needs to be discarded on last use.</summary>
+        public bool discardBuffer;
 
         void InitDefaultValues(bool dynamicResolution, bool xrReady)
         {
@@ -169,6 +240,8 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
                 slices = 1;
                 dimension = TextureDimension.Tex2D;
             }
+
+            discardBuffer = false;
         }
 
         /// <summary>
@@ -229,10 +302,65 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         /// <summary>
         /// Copy constructor
         /// </summary>
-        /// <param name="input"></param>
+        /// <param name="input">The TextureDesc instance to copy from.</param>
         public TextureDesc(TextureDesc input)
         {
             this = input;
+        }
+
+        /// <summary>
+        /// Do a best effort conversion from a RenderTextureDescriptor to a TextureDesc. This tries to initialize a descriptor to be as close as possible to the given render texture descriptor but there might be subtle differences when creating
+        /// render graph textures using this TextureDesc due to the underlying RTHandle system.
+        /// Some parameters of the TextureDesc (like name and filtering modes) are not present in the RenderTextureDescriptor for these the returned TextureDesc will contain plausible default values.
+        /// </summary>
+        /// <param name="input">The texture descriptor to create a TextureDesc from</param>
+        public TextureDesc(RenderTextureDescriptor input)
+        {
+            sizeMode = TextureSizeMode.Explicit;
+            width = input.width;
+            height = input.height;
+            slices = input.volumeDepth;
+            scale = Vector2.one;
+            func = null;
+            depthBufferBits = (DepthBits)input.depthBufferBits;
+            colorFormat = input.graphicsFormat;
+            filterMode = FilterMode.Bilinear;
+            wrapMode = TextureWrapMode.Clamp;
+            dimension = input.dimension;
+            enableRandomWrite = input.enableRandomWrite;
+            useMipMap = input.useMipMap;
+            autoGenerateMips = input.autoGenerateMips;
+            isShadowMap = (input.shadowSamplingMode != ShadowSamplingMode.None);
+            anisoLevel = 1;
+            mipMapBias = 0;
+            msaaSamples = (MSAASamples)input.msaaSamples;
+            bindTextureMS = input.bindMS;
+            useDynamicScale = input.useDynamicScale;
+            useDynamicScaleExplicit = false;
+            memoryless = input.memoryless;
+            vrUsage = input.vrUsage;
+            name = "UnNamedFromRenderTextureDescriptor";
+            fastMemoryDesc = new FastMemoryDesc();
+            fastMemoryDesc.inFastMemory = false;
+            fallBackToBlackTexture = false;
+            disableFallBackToImportedTexture = true;
+            clearBuffer = true;
+            clearColor = Color.black;
+            discardBuffer = false;
+        }
+
+        /// <summary>
+        /// Do a best effort conversion from a RenderTexture to a TextureDesc. This tries to initialize a descriptor to be as close as possible to the given render texture but there might be subtle differences when creating
+        /// render graph textures using this TextureDesc due to the underlying RTHandle system.
+        /// </summary>
+        /// <param name="input">The texture to create a TextureDesc from</param>
+        public TextureDesc(RenderTexture input) : this(input.descriptor)
+        {
+            filterMode = input.filterMode;
+            wrapMode = input.wrapMode;
+            anisoLevel = input.anisoLevel;
+            mipMapBias = input.mipMapBias;
+            this.name = "UnNamedFromRenderTextureDescriptor";
         }
 
         /// <summary>
@@ -285,6 +413,24 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
 
             return hashCode;
         }
+
+        /// <summary>
+        /// Calculate the final size of the texture descriptor in pixels. This takes into account the sizeMode set for this descriptor.
+        /// For the automatically scaled sizes the size will be relative to the RTHandle reference size <see cref="RTHandles.SetReferenceSize">SetReferenceSize</see>.
+        /// </summary>
+        /// <returns>The calculated size.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the texture descriptor's size mode falls outside the expected range.</exception>
+        public Vector2Int CalculateFinalDimensions()
+        {
+            return sizeMode switch
+            {
+                TextureSizeMode.Explicit => new Vector2Int(width, height),
+                TextureSizeMode.Scale => RTHandles.CalculateDimensions(scale),
+                TextureSizeMode.Functor => RTHandles.CalculateDimensions(func),
+                _ => throw new ArgumentOutOfRangeException()
+            };
+
+        }
     }
 
     [DebuggerDisplay("TextureResource ({desc.name})")]
@@ -300,49 +446,13 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
                 return desc.name;
         }
 
-        // NOTE:
-        // Next two functions should have been implemented in RenderGraphResource<DescType, ResType> but for some reason,
-        // when doing so, it's impossible to break in the Texture version of the virtual function (with VS2017 at least), making this completely un-debuggable.
-        // To work around this, we just copy/pasted the implementation in each final class...
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public override int GetDescHashCode() { return desc.GetHashCode(); }
 
-        public override void CreatePooledGraphicsResource()
+        public override void CreateGraphicsResource()
         {
-            Debug.Assert(m_Pool != null, "TextureResource: CreatePooledGraphicsResource should only be called for regular pooled resources");
+            var name = GetName();
 
-            int hashCode = desc.GetHashCode();
-
-            if (graphicsResource != null)
-                throw new InvalidOperationException(string.Format("TextureResource: Trying to create an already created resource ({0}). Resource was probably declared for writing more than once in the same pass.", GetName()));
-
-            var pool = m_Pool as TexturePool;
-            if (!pool.TryGetResource(hashCode, out graphicsResource))
-            {
-                CreateGraphicsResource(desc.name);
-            }
-
-            cachedHash = hashCode;
-            pool.RegisterFrameAllocation(cachedHash, graphicsResource);
-            graphicsResource.m_Name = desc.name;
-        }
-
-        public override void ReleasePooledGraphicsResource(int frameIndex)
-        {
-            if (graphicsResource == null)
-                throw new InvalidOperationException($"TextureResource: Tried to release a resource ({GetName()}) that was never created. Check that there is at least one pass writing to it first.");
-
-            // Shared resources don't use the pool
-            var pool = m_Pool as TexturePool;
-            if (pool != null)
-            {
-                pool.ReleaseResource(cachedHash, graphicsResource, frameIndex);
-                pool.UnregisterFrameAllocation(cachedHash, graphicsResource);
-            }
-
-            Reset(null);
-        }
-
-        public override void CreateGraphicsResource(string name = "")
-        {
             // Textures are going to be reused under different aliases along the frame so we can't provide a specific name upon creation.
             // The name in the desc is going to be used for debugging purpose and render graph visualization.
             if (name == "")
@@ -352,17 +462,24 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
             {
                 case TextureSizeMode.Explicit:
                     graphicsResource = RTHandles.Alloc(desc.width, desc.height, desc.slices, desc.depthBufferBits, desc.colorFormat, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
-                        desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.memoryless, desc.vrUsage, name);
+                        desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.useDynamicScaleExplicit, desc.memoryless, desc.vrUsage, name);
                     break;
                 case TextureSizeMode.Scale:
                     graphicsResource = RTHandles.Alloc(desc.scale, desc.slices, desc.depthBufferBits, desc.colorFormat, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
-                        desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.memoryless, desc.vrUsage, name);
+                        desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.useDynamicScaleExplicit, desc.memoryless, desc.vrUsage, name);
                     break;
                 case TextureSizeMode.Functor:
                     graphicsResource = RTHandles.Alloc(desc.func, desc.slices, desc.depthBufferBits, desc.colorFormat, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
-                        desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.memoryless, desc.vrUsage, name);
+                        desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.useDynamicScaleExplicit, desc.memoryless, desc.vrUsage, name);
                     break;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public override void UpdateGraphicsResource()
+        {
+            if (graphicsResource != null)
+                graphicsResource.m_Name = GetName();
         }
 
         public override void ReleaseGraphicsResource()
@@ -390,12 +507,12 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
             res.Release();
         }
 
-        protected override string GetResourceName(RTHandle res)
+        protected override string GetResourceName(in RTHandle res)
         {
             return res.rt.name;
         }
 
-        protected override long GetResourceSize(RTHandle res)
+        protected override long GetResourceSize(in RTHandle res)
         {
             return Profiling.Profiler.GetRuntimeMemorySizeLong(res.rt);
         }
@@ -408,37 +525,6 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         override protected int GetSortIndex(RTHandle res)
         {
             return res.GetInstanceID();
-        }
-
-        // Another C# nicety.
-        // We need to re-implement the whole thing every time because:
-        // - obj.resource.Release is Type specific so it cannot be called on a generic (and there's no shared interface for resources like RTHandle, ComputeBuffers etc)
-        // - We can't use a virtual release function because it will capture 'this' in the lambda for RemoveAll generating GCAlloc in the process.
-        override public void PurgeUnusedResources(int currentFrameIndex)
-        {
-            // Update the frame index for the lambda. Static because we don't want to capture.
-            s_CurrentFrameIndex = currentFrameIndex;
-            m_RemoveList.Clear();
-
-            foreach (var kvp in m_ResourcePool)
-            {
-                // WARNING: No foreach here. Sorted list GetEnumerator generates garbage...
-                var list = kvp.Value;
-                var keys = list.Keys;
-                var values = list.Values;
-                for (int i = 0; i < list.Count; ++i)
-                {
-                    var value = values[i];
-                    if (ShouldReleaseResource(value.frameIndex, s_CurrentFrameIndex))
-                    {
-                        value.resource.Release();
-                        m_RemoveList.Add(keys[i]);
-                    }
-                }
-
-                foreach (var key in m_RemoveList)
-                    list.Remove(key);
-            }
         }
     }
 }

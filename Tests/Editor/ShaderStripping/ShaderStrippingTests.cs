@@ -8,7 +8,7 @@ using UnityEngine.Rendering;
 
 namespace UnityEditor.Rendering.Tests.ShaderStripping
 {
-    public class VariantStrippingTests
+    class VariantStrippingTests
     {
         #region Strippers
         abstract class ShaderVariantStripperTest : IShaderVariantStripper
@@ -100,7 +100,7 @@ namespace UnityEditor.Rendering.Tests.ShaderStripping
         #endregion
 
         ShaderPrepocessorTests m_ShaderVariantStripper;
-        private RenderPipelineAsset m_PreviousPipeline;
+        RenderPipelineAsset m_PreviousPipeline;
         ShaderStrippingReportScope m_ReportTestScope;
 
         [SetUp]
@@ -108,38 +108,40 @@ namespace UnityEditor.Rendering.Tests.ShaderStripping
         {
             m_PreviousPipeline = GraphicsSettings.defaultRenderPipeline;
             GraphicsSettings.defaultRenderPipeline = null;
-            m_ReportTestScope = new ShaderStrippingReportScope();
-            m_ReportTestScope.OnPreprocessBuild(default);
+            Rendering.ShaderStripping.ReportBegin();
         }
 
         [TearDown]
         public void TearDown()
         {
+            Rendering.ShaderStripping.ReportEnd();
             m_ShaderVariantStripper = null;
             GraphicsSettings.defaultRenderPipeline = m_PreviousPipeline;
-            m_ReportTestScope.OnPostprocessBuild(default);
-            m_ReportTestScope = null;
         }
 
         static TestCaseData[] s_TestCaseDatas =
         {
-             new TestCaseData(typeof(StripNothing), Shader.Find("Hidden/Internal-Colored"), new List<Rendering.ShaderCompilerData> { default, default })
+             new TestCaseData(typeof(StripNothing), Shader.Find("Hidden/Internal-Colored"), 2)
                 .SetName("Given a stripper that does nothing, the variants are kept")
                 .Returns(2),
-             new TestCaseData(typeof(StripAll), Shader.Find("Hidden/Internal-Colored"), new List<Rendering.ShaderCompilerData> { default, default })
+             new TestCaseData(typeof(StripAll), Shader.Find("Hidden/Internal-Colored"), 2)
                 .SetName("Given a stripper that strip everything, the variants are stripped")
                 .Returns(0),
-             new TestCaseData(typeof(StripHalf), Shader.Find("Hidden/Internal-Colored"), new List<Rendering.ShaderCompilerData> { default, default, default, default, default, default })
+             new TestCaseData(typeof(StripHalf), Shader.Find("Hidden/Internal-Colored"), 6)
                 .SetName("Given a stripper that reduces the variants to the half, just half of the variants are stripped")
                 .Returns(3),
-             new TestCaseData(typeof(StripNothing), Shader.Find("DummyPipeline/VariantStrippingTestsShader"), new List<Rendering.ShaderCompilerData> { default, default })
+             new TestCaseData(typeof(StripNothing), Shader.Find("DummyPipeline/VariantStrippingTestsShader"), 2)
                 .SetName("Given a shader that is not from the current pipeline, all the variants are stripped")
                 .Returns(0),
         };
 
         [Test, TestCaseSource(nameof(s_TestCaseDatas))]
-        public int CheckNumberOfVariantsIsCorrect(Type preprocessType, Shader shader, List<Rendering.ShaderCompilerData> variants)
+        public int CheckNumberOfVariantsIsCorrect(Type preprocessType, Shader shader, int inputCount)
         {
+            List<Rendering.ShaderCompilerData> variants = new();
+            for (int i = 0; i < inputCount; ++i)
+                variants.Add(default);
+
             m_ShaderVariantStripper = new (preprocessType);
             Assert.IsTrue(m_ShaderVariantStripper.TryProcessShader(shader, default, variants, out var error));
             return variants.Count;

@@ -1,7 +1,7 @@
 #ifndef UNITY_COLOR_INCLUDED
 #define UNITY_COLOR_INCLUDED
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH || defined(UNITY_UNIFIED_SHADER_PRECISION_MODEL)
 #pragma warning (disable : 3205) // conversion of larger type to smaller
 #endif
 
@@ -45,7 +45,7 @@ real4 LinearToGamma20(real4 c)
 // Gamma22
 real Gamma22ToLinear(real c)
 {
-    return PositivePow(c, 2.2);
+    return PositivePow(c, real(2.2));
 }
 
 real3 Gamma22ToLinear(real3 c)
@@ -60,7 +60,7 @@ real4 Gamma22ToLinear(real4 c)
 
 real LinearToGamma22(real c)
 {
-    return PositivePow(c, 0.454545454545455);
+    return PositivePow(c, real(0.454545454545455));
 }
 
 real3 LinearToGamma22(real3 c)
@@ -80,65 +80,44 @@ real SRGBToLinear(real c)
     c = min(c, 100.0); // Make sure not to exceed HALF_MAX after the pow() below
 #endif
     real linearRGBLo  = c / 12.92;
-    real linearRGBHi  = PositivePow((c + 0.055) / 1.055, 2.4);
+    real linearRGBHi  = PositivePow((c + 0.055) / 1.055, real(2.4));
     real linearRGB    = (c <= 0.04045) ? linearRGBLo : linearRGBHi;
     return linearRGB;
 }
 
 real2 SRGBToLinear(real2 c)
 {
-#if defined(UNITY_COLORSPACE_GAMMA) && REAL_IS_HALF
-    c = min(c, 100.0); // Make sure not to exceed HALF_MAX after the pow() below
-#endif
-    real2 linearRGBLo  = c / 12.92;
-    real2 linearRGBHi  = PositivePow((c + 0.055) / 1.055, real2(2.4, 2.4));
-    real2 linearRGB    = (c <= 0.04045) ? linearRGBLo : linearRGBHi;
-    return linearRGB;
+    return real2(SRGBToLinear(c.r), SRGBToLinear(c.g));
 }
 
 real3 SRGBToLinear(real3 c)
 {
-#if defined(UNITY_COLORSPACE_GAMMA) && REAL_IS_HALF
-    c = min(c, 100.0); // Make sure not to exceed HALF_MAX after the pow() below
-#endif
-    real3 linearRGBLo  = c / 12.92;
-    real3 linearRGBHi  = PositivePow((c + 0.055) / 1.055, real3(2.4, 2.4, 2.4));
-    real3 linearRGB    = (c <= 0.04045) ? linearRGBLo : linearRGBHi;
-    return linearRGB;
+    return real3(SRGBToLinear(c.r), SRGBToLinear(c.g), SRGBToLinear(c.b));
 }
 
 real4 SRGBToLinear(real4 c)
 {
-    return real4(SRGBToLinear(c.rgb), c.a);
+    return real4(SRGBToLinear(c.r), SRGBToLinear(c.g), SRGBToLinear(c.b), c.a);
 }
 
 real LinearToSRGB(real c)
 {
-    real sRGBLo = c * 12.92;
-    real sRGBHi = (PositivePow(c, 1.0/2.4) * 1.055) - 0.055;
-    real sRGB   = (c <= 0.0031308) ? sRGBLo : sRGBHi;
-    return sRGB;
+    return (c <= 0.0031308) ? (c * 12.9232102) : 1.055 * PositivePow(c, 1.0 / 2.4) - 0.055;
 }
 
 real2 LinearToSRGB(real2 c)
 {
-    real2 sRGBLo = c * 12.92;
-    real2 sRGBHi = (PositivePow(c, real2(1.0/2.4, 1.0/2.4)) * 1.055) - 0.055;
-    real2 sRGB   = (c <= 0.0031308) ? sRGBLo : sRGBHi;
-    return sRGB;
+    return real2(LinearToSRGB(c.r), LinearToSRGB(c.g));
 }
 
 real3 LinearToSRGB(real3 c)
 {
-    real3 sRGBLo = c * 12.92;
-    real3 sRGBHi = (PositivePow(c, real3(1.0/2.4, 1.0/2.4, 1.0/2.4)) * 1.055) - 0.055;
-    real3 sRGB   = (c <= 0.0031308) ? sRGBLo : sRGBHi;
-    return sRGB;
+    return real3(LinearToSRGB(c.r), LinearToSRGB(c.g), LinearToSRGB(c.b));
 }
 
 real4 LinearToSRGB(real4 c)
 {
-    return real4(LinearToSRGB(c.rgb), c.a);
+    return real4(LinearToSRGB(c.r), LinearToSRGB(c.g), LinearToSRGB(c.b), c.a);
 }
 
 // TODO: Seb - To verify and refit!
@@ -165,17 +144,17 @@ real4 FastSRGBToLinear(real4 c)
 
 real FastLinearToSRGB(real c)
 {
-    return saturate(1.055 * PositivePow(c, 0.416666667) - 0.055);
+    return saturate(1.055 * PositivePow(c, real(0.416666667)) - 0.055);
 }
 
 real2 FastLinearToSRGB(real2 c)
 {
-    return saturate(1.055 * PositivePow(c, 0.416666667) - 0.055);
+    return saturate(1.055 * PositivePow(c, real(0.416666667)) - 0.055);
 }
 
 real3 FastLinearToSRGB(real3 c)
 {
-    return saturate(1.055 * PositivePow(c, 0.416666667) - 0.055);
+    return saturate(1.055 * PositivePow(c, real(0.416666667)) - 0.055);
 }
 
 real4 FastLinearToSRGB(real4 c)
@@ -217,9 +196,9 @@ real AcesLuminance(real4 linearRgba)
 // William B. Thompson, Peter Shirley, and James A. Ferwerda
 real ScotopicLuminance(real3 xyzRgb)
 {
-    float X = xyzRgb.x;
-    float Y = xyzRgb.y;
-    float Z = xyzRgb.z;
+    real X = xyzRgb.x;
+    real Y = xyzRgb.y;
+    real Z = xyzRgb.z;
     return Y * (1.33 * (1.0 + (Y + Z) / X) - 1.68);
 }
 
@@ -492,19 +471,17 @@ real4 FastTonemapInvert(real4 c)
     return real4(FastTonemapInvert(c.rgb), c.a);
 }
 
-#ifndef SHADER_API_GLES
 // 3D LUT grading
 // scaleOffset = (1 / lut_size, lut_size - 1)
-real3 ApplyLut3D(TEXTURE3D_PARAM(tex, samplerTex), float3 uvw, float2 scaleOffset)
+float3 ApplyLut3D(TEXTURE3D_PARAM(tex, samplerTex), float3 uvw, float2 scaleOffset)
 {
     uvw.xyz = uvw.xyz * scaleOffset.yyy * scaleOffset.xxx + scaleOffset.xxx * 0.5;
     return SAMPLE_TEXTURE3D_LOD(tex, samplerTex, uvw, 0.0).rgb;
 }
-#endif
 
 // 2D LUT grading
 // scaleOffset = (1 / lut_width, 1 / lut_height, lut_height - 1)
-real3 ApplyLut2D(TEXTURE2D_PARAM(tex, samplerTex), float3 uvw, float3 scaleOffset)
+float3 ApplyLut2D(TEXTURE2D_PARAM(tex, samplerTex), float3 uvw, float3 scaleOffset)
 {
     // Strip format where `height = sqrt(width)`
     uvw.z *= scaleOffset.z;
@@ -521,22 +498,33 @@ real3 ApplyLut2D(TEXTURE2D_PARAM(tex, samplerTex), float3 uvw, float3 scaleOffse
 
 // Returns the default value for a given position on a 2D strip-format color lookup table
 // params = (lut_height, 0.5 / lut_width, 0.5 / lut_height, lut_height / lut_height - 1)
-real3 GetLutStripValue(float2 uv, float4 params)
+float3 GetLutStripValue(float2 uv, float4 params)
 {
-    uv -= params.yz;
-    real3 color;
-    color.r = frac(uv.x * params.x);
-    color.b = uv.x - color.r / params.x;
-    color.g = uv.y;
+    // scale up x from [0,1] to [0,lut_height], so that x is an integer at LUT boundaries (arranged in a strip)
+    uv.x *= params.x;
+
+    // make x vary between 0 and 1 within its LUT
+    float lutBase = floor(uv.x);
+    uv.x -= lutBase;
+
+    // get the LUT index as value between 0 and (lut_height - 1)/lut_height
+    float lutBaseU = lutBase * 2.0 * params.z;
+
+    // shift the UV to vary between 0 and (lut_height - 1)/lut_height, arrange as color
+    float3 color;
+    color.rg = uv - params.zz;
+    color.b = lutBaseU;
+
+    // scale to vary between 0 and 1
     return color * params.w;
 }
 
 // Neutral tonemapping (Hable/Hejl/Frostbite)
 // Input is linear RGB
 // More accuracy to avoid NaN on extremely high values.
-float3 NeutralCurve(float3 x, real a, real b, real c, real d, real e, real f)
+real3 NeutralCurve(float3 x, real a, real b, real c, real d, real e, real f)
 {
-    return ((x * (a * x + c * b) + d * e) / (x * (a * x + b) + d * f)) - e / f;
+    return real3(((x * (a * x + c * b) + d * e) / (x * (a * x + b) + d * f)) - e / f);
 }
 
 #define TONEMAPPING_CLAMP_MAX 435.18712 //(-b + sqrt(b * b - 4 * a * (HALF_MAX - d * f))) / (2 * a * whiteScale)
@@ -556,7 +544,7 @@ real3 NeutralTonemap(real3 x)
     const real whiteLevel = 5.3;
     const real whiteClip = 1.0;
 
-#if defined(SHADER_API_MOBILE)
+#if REAL_IS_HALF
     x = min(x, TONEMAPPING_CLAMP_MAX);
 #endif
 
@@ -621,7 +609,7 @@ real3 CustomTonemap(real3 x, real3 curve, real4 toeSegmentA, real2 toeSegmentB, 
     return ret;
 }
 
-// Coming from STP, to replace when STP lands. 
+// Coming from STP, to replace when STP lands.
 #define SAT 8.0f
 real3 InvertibleTonemap(real3 x)
 {
@@ -631,7 +619,7 @@ real3 InvertibleTonemap(real3 x)
 
 real3 InvertibleTonemapInverse(real3 x)
 {
-    float y = rcp(max(real(1.0 / 32768.0), saturate(real(1.0 / SAT) - Max3(x.r, x.g, x.b) * real(1.0 / SAT))));
+    real y = rcp(max(real(1.0 / 32768.0), saturate(real(1.0 / SAT) - Max3(x.r, x.g, x.b) * real(1.0 / SAT))));
     return x * y;
 }
 
@@ -645,22 +633,22 @@ float3 AcesTonemap(float3 aces)
 {
 #if TONEMAPPING_USE_FULL_ACES
 
-    float3 oces = RRT(aces);
+    float3 oces = RRT(half3(aces));
     float3 odt = ODT_RGBmonitor_100nits_dim(oces);
     return odt;
 
 #else
 
     // --- Glow module --- //
-    float saturation = rgb_2_saturation(aces);
-    float ycIn = rgb_2_yc(aces);
-    float s = sigmoid_shaper((saturation - 0.4) / 0.2);
+    half saturation = rgb_2_saturation(half3(aces));
+    half ycIn = rgb_2_yc(half3(aces));
+    half s = sigmoid_shaper((saturation - 0.4) / 0.2);
     float addedGlow = 1.0 + glow_fwd(ycIn, RRT_GLOW_GAIN * s, RRT_GLOW_MID);
     aces *= addedGlow;
 
     // --- Red modifier --- //
-    float hue = rgb_2_hue(aces);
-    float centeredHue = center_hue(hue, RRT_RED_HUE);
+    half hue = rgb_2_hue(half3(aces));
+    half centeredHue = center_hue(hue, RRT_RED_HUE);
     float hueWeight;
     {
         //hueWeight = cubic_basis_shaper(centeredHue, RRT_RED_WIDTH);
@@ -701,7 +689,7 @@ float3 AcesTonemap(float3 aces)
     // float3 linearCV = Y_2_linCV(rgbPost, CINEMA_WHITE, CINEMA_BLACK);
 
     // Apply gamma adjustment to compensate for dim surround
-    float3 linearCV = darkSurround_to_dimSurround(rgbPost);
+    float3 linearCV = darkSurround_to_dimSurround(half3(rgbPost));
 
     // Apply desaturation to compensate for luminance difference
     //linearCV = mul(ODT_SAT_MAT, color);
@@ -723,7 +711,7 @@ float3 AcesTonemap(float3 aces)
 }
 
 // RGBM encode/decode
-static const float kRGBMRange = 8.0;
+static const half kRGBMRange = 8.0;
 
 half4 EncodeRGBM(half3 color)
 {
@@ -738,7 +726,7 @@ half3 DecodeRGBM(half4 rgbm)
     return rgbm.xyz * rgbm.w * kRGBMRange;
 }
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH
 #pragma warning (enable : 3205) // conversion of larger type to smaller
 #endif
 

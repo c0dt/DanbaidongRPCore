@@ -28,7 +28,7 @@ namespace UnityEngine.Rendering.Tests
                 Assert.Ignore("Frame timing tests are not supported in batch mode, skipping test.");
 
             // HACK #1 - really shouldn't have to do this here, but previous tests are leaking gameobjects
-            var objects = GameObject.FindObjectsOfType<GameObject>();
+            var objects = GameObject.FindObjectsByType<GameObject>(FindObjectsSortMode.InstanceID);
             foreach (var o in objects)
             {
                 // HACK #2 - must not destroy DebugUpdater, which happens to have an EventSystem.
@@ -55,28 +55,36 @@ namespace UnityEngine.Rendering.Tests
         }
     }
 
-    // [UnityPlatform(exclude = new RuntimePlatform[] { RuntimePlatform.LinuxPlayer, RuntimePlatform.LinuxEditor })] // Disabled on Linux (case 1370861)
-    // class RuntimeProfilerTests : RuntimeProfilerTestBase
-    // {
-    //     [UnityTest]
-    //     public IEnumerator RuntimeProfilerGivesNonZeroOutput()
-    //     {
-    //         yield return Warmup();
+    [UnityPlatform(exclude = new RuntimePlatform[] { RuntimePlatform.LinuxPlayer, RuntimePlatform.LinuxEditor })] // Disabled on Linux (case 1370861)
+    class RuntimeProfilerTests : RuntimeProfilerTestBase
+    {
+        [UnityTest]
+        public IEnumerator RuntimeProfilerGivesNonZeroOutput()
+        {
+            yield return Warmup();
 
-    //         m_ToCleanup = new GameObject();
-    //         var camera = m_ToCleanup.AddComponent<Camera>();
-    //         for (int i = 0; i < k_NumFramesToRender; i++)
-    //         {
-    //             m_DebugFrameTiming.UpdateFrameTiming();
-    //             camera.Render();
-    //             yield return null;
-    //         }
+            m_ToCleanup = new GameObject();
+            var camera = m_ToCleanup.AddComponent<Camera>();
+            for (int i = 0; i < k_NumFramesToRender; i++)
+            {
+                m_DebugFrameTiming.UpdateFrameTiming();
 
-    //         Assert.True(
-    //             m_DebugFrameTiming.m_BottleneckHistory.Histogram.Balanced > 0 ||
-    //             m_DebugFrameTiming.m_BottleneckHistory.Histogram.CPU > 0 ||
-    //             m_DebugFrameTiming.m_BottleneckHistory.Histogram.GPU > 0 ||
-    //             m_DebugFrameTiming.m_BottleneckHistory.Histogram.PresentLimited > 0);
-    //     }
-    // }
+                var rr = new UnityEngine.Rendering.RenderPipeline.StandardRequest();
+                rr.destination = RenderTexture.GetTemporary(128, 128, 24, UnityEngine.Experimental.Rendering.GraphicsFormat.R8G8B8A8_SRGB);
+                rr.mipLevel = 0;
+                rr.slice = 0;
+                rr.face = CubemapFace.Unknown;
+                UnityEngine.Rendering.RenderPipeline.SubmitRenderRequest(camera, rr);
+                RenderTexture.ReleaseTemporary(rr.destination);
+
+                yield return null;
+            }
+
+            Assert.True(
+                m_DebugFrameTiming.m_BottleneckHistory.Histogram.Balanced > 0 ||
+                m_DebugFrameTiming.m_BottleneckHistory.Histogram.CPU > 0 ||
+                m_DebugFrameTiming.m_BottleneckHistory.Histogram.GPU > 0 ||
+                m_DebugFrameTiming.m_BottleneckHistory.Histogram.PresentLimited > 0);
+        }
+    }
 }

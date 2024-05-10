@@ -1,12 +1,13 @@
 using System;
-using System.Collections.Generic;
-using UnityEngine.Rendering;
+using System.Diagnostics;
+using UnityEngine.Scripting.APIUpdating;
 
-namespace UnityEngine.Experimental.Rendering.RenderGraphModule
+namespace UnityEngine.Rendering.RenderGraphModule
 {
     /// <summary>
     /// Use this struct to set up a new Render Pass.
     /// </summary>
+    [MovedFrom(true, "UnityEngine.Experimental.Rendering.RenderGraphModule", "UnityEngine.Rendering.RenderGraphModule")]
     public struct RenderGraphBuilder : IDisposable
     {
         RenderGraphPass m_RenderPass;
@@ -137,22 +138,24 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         }
 
         /// <summary>
-        /// Specify a Renderer List resource to use during the pass.
+        /// Specify a RayTracingAccelerationStructure resource to build during the pass.
         /// </summary>
-        /// <param name="input">The Renderer List resource to use during the pass.</param>
+        /// <param name="input">The RayTracingAccelerationStructure resource to build during the pass.</param>
         /// <returns>An updated resource handle to the input resource.</returns>
-        public RendererListHandle UseRendererList(in RendererListHandle input)
+        public RayTracingAccelerationStructureHandle WriteRayTracingAccelerationStructure(in RayTracingAccelerationStructureHandle input)
         {
-            m_RenderPass.UseRendererList(input);
+            CheckResource(input.handle);
+            m_Resources.IncrementWriteCount(input.handle);
+            m_RenderPass.AddResourceWrite(input.handle);
             return input;
         }
 
         /// <summary>
-        /// Specify a Compute Buffer resource to read from during the pass.
+        /// Specify a RayTracingAccelerationStructure resource to use during the pass.
         /// </summary>
-        /// <param name="input">The Compute Buffer resource to read from during the pass.</param>
+        /// <param name="input">The RayTracingAccelerationStructure resource to use during the pass.</param>
         /// <returns>An updated resource handle to the input resource.</returns>
-        public ComputeBufferHandle ReadComputeBuffer(in ComputeBufferHandle input)
+        public RayTracingAccelerationStructureHandle ReadRayTracingAccelerationStructure(in RayTracingAccelerationStructureHandle input)
         {
             CheckResource(input.handle);
             m_RenderPass.AddResourceRead(input.handle);
@@ -160,11 +163,35 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         }
 
         /// <summary>
-        /// Specify a Compute Buffer resource to write to during the pass.
+        /// Specify a Renderer List resource to use during the pass.
         /// </summary>
-        /// <param name="input">The Compute Buffer resource to write to during the pass.</param>
+        /// <param name="input">The Renderer List resource to use during the pass.</param>
         /// <returns>An updated resource handle to the input resource.</returns>
-        public ComputeBufferHandle WriteComputeBuffer(in ComputeBufferHandle input)
+        public RendererListHandle UseRendererList(in RendererListHandle input)
+        {
+            if(input.IsValid())
+                m_RenderPass.UseRendererList(input);
+            return input;
+        }
+
+        /// <summary>
+        /// Specify a Graphics Buffer resource to read from during the pass.
+        /// </summary>
+        /// <param name="input">The Graphics Buffer resource to read from during the pass.</param>
+        /// <returns>An updated resource handle to the input resource.</returns>
+        public BufferHandle ReadBuffer(in BufferHandle input)
+        {
+            CheckResource(input.handle);
+            m_RenderPass.AddResourceRead(input.handle);
+            return input;
+        }
+
+        /// <summary>
+        /// Specify a Graphics Buffer resource to write to during the pass.
+        /// </summary>
+        /// <param name="input">The Graphics Buffer resource to write to during the pass.</param>
+        /// <returns>An updated resource handle to the input resource.</returns>
+        public BufferHandle WriteBuffer(in BufferHandle input)
         {
             CheckResource(input.handle);
             m_RenderPass.AddResourceWrite(input.handle);
@@ -173,28 +200,28 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         }
 
         /// <summary>
-        /// Create a new Render Graph Compute Buffer resource.
-        /// This Compute Buffer will only be available for the current pass and will be assumed to be both written and read so users don't need to add explicit read/write declarations.
+        /// Create a new Render Graph Graphics Buffer resource.
+        /// This Graphics Buffer will only be available for the current pass and will be assumed to be both written and read so users don't need to add explicit read/write declarations.
         /// </summary>
-        /// <param name="desc">Compute Buffer descriptor.</param>
-        /// <returns>A new transient ComputeBufferHandle.</returns>
-        public ComputeBufferHandle CreateTransientComputeBuffer(in ComputeBufferDesc desc)
+        /// <param name="desc">Graphics Buffer descriptor.</param>
+        /// <returns>A new transient GraphicsBufferHandle.</returns>
+        public BufferHandle CreateTransientBuffer(in BufferDesc desc)
         {
-            var result = m_Resources.CreateComputeBuffer(desc, m_RenderPass.index);
+            var result = m_Resources.CreateBuffer(desc, m_RenderPass.index);
             m_RenderPass.AddTransientResource(result.handle);
             return result;
         }
 
         /// <summary>
-        /// Create a new Render Graph Compute Buffer resource using the descriptor from another Compute Buffer.
-        /// This Compute Buffer will only be available for the current pass and will be assumed to be both written and read so users don't need to add explicit read/write declarations.
+        /// Create a new Render Graph Graphics Buffer resource using the descriptor from another Graphics Buffer.
+        /// This Graphics Buffer will only be available for the current pass and will be assumed to be both written and read so users don't need to add explicit read/write declarations.
         /// </summary>
-        /// <param name="computebuffer">Compute Buffer from which the descriptor should be used.</param>
-        /// <returns>A new transient ComputeBufferHandle.</returns>
-        public ComputeBufferHandle CreateTransientComputeBuffer(in ComputeBufferHandle computebuffer)
+        /// <param name="graphicsbuffer">Graphics Buffer from which the descriptor should be used.</param>
+        /// <returns>A new transient GraphicsBufferHandle.</returns>
+        public BufferHandle CreateTransientBuffer(in BufferHandle graphicsbuffer)
         {
-            var desc = m_Resources.GetComputeBufferResourceDesc(computebuffer.handle);
-            var result = m_Resources.CreateComputeBuffer(desc, m_RenderPass.index);
+            var desc = m_Resources.GetBufferResourceDesc(graphicsbuffer.handle);
+            var result = m_Resources.CreateBuffer(desc, m_RenderPass.index);
             m_RenderPass.AddTransientResource(result.handle);
             return result;
         }
@@ -205,7 +232,8 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         /// </summary>
         /// <typeparam name="PassData">The Type of the class that provides data to the Render Pass.</typeparam>
         /// <param name="renderFunc">Render function for the pass.</param>
-        public void SetRenderFunc<PassData>(RenderFunc<PassData> renderFunc) where PassData : class, new()
+        public void SetRenderFunc<PassData>(BaseRenderFunc<PassData, RenderGraphContext> renderFunc)
+            where PassData : class, new()
         {
             ((RenderGraphPass<PassData>)m_RenderPass).renderFunc = renderFunc;
         }
@@ -229,6 +257,15 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
         public void AllowPassCulling(bool value)
         {
             m_RenderPass.AllowPassCulling(value);
+        }
+
+        /// <summary>
+        /// Enable foveated rendering for this pass.
+        /// </summary>
+        /// <param name="value">True to enable foveated rendering.</param>
+        public void EnableFoveatedRasterization(bool value)
+        {
+            m_RenderPass.EnableFoveatedRasterization(value);
         }
 
         /// <summary>
@@ -282,28 +319,30 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
             m_Disposed = true;
         }
 
+        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
         void CheckResource(in ResourceHandle res, bool dontCheckTransientReadWrite = false)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
-            if (res.IsValid())
+            if(RenderGraph.enableValidityChecks)
             {
-                int transientIndex = m_Resources.GetRenderGraphResourceTransientIndex(res);
-                // We have dontCheckTransientReadWrite here because users may want to use UseColorBuffer/UseDepthBuffer API to benefit from render target auto binding. In this case we don't want to raise the error.
-                if (transientIndex == m_RenderPass.index && !dontCheckTransientReadWrite)
+                if (res.IsValid())
                 {
-                    Debug.LogError($"Trying to read or write a transient resource at pass {m_RenderPass.name}.Transient resource are always assumed to be both read and written.");
-                }
+                    int transientIndex = m_Resources.GetRenderGraphResourceTransientIndex(res);
+                    // We have dontCheckTransientReadWrite here because users may want to use UseColorBuffer/UseDepthBuffer API to benefit from render target auto binding. In this case we don't want to raise the error.
+                    if (transientIndex == m_RenderPass.index && !dontCheckTransientReadWrite)
+                    {
+                        Debug.LogError($"Trying to read or write a transient resource at pass {m_RenderPass.name}.Transient resource are always assumed to be both read and written.");
+                    }
 
-                if (transientIndex != -1 && transientIndex != m_RenderPass.index)
+                    if (transientIndex != -1 && transientIndex != m_RenderPass.index)
+                    {
+                        throw new ArgumentException($"Trying to use a transient texture (pass index {transientIndex}) in a different pass (pass index {m_RenderPass.index}).");
+                    }
+                }
+                else
                 {
-                    throw new ArgumentException($"Trying to use a transient texture (pass index {transientIndex}) in a different pass (pass index {m_RenderPass.index}).");
+                    throw new ArgumentException($"Trying to use an invalid resource (pass {m_RenderPass.name}).");
                 }
             }
-            else
-            {
-                throw new ArgumentException($"Trying to use an invalid resource (pass {m_RenderPass.name}).");
-            }
-#endif
         }
 
         internal void GenerateDebugData(bool value)

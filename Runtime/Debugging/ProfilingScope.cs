@@ -63,6 +63,7 @@ namespace UnityEngine.Rendering
         /// <typeparam name="TEnum">Type of the enumeration.</typeparam>
         /// <param name="marker">Enumeration value.</param>
         /// <returns>The profiling sampler for the given enumeration value.</returns>
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
         public static ProfilingSampler Get<TEnum>(TEnum marker)
             where TEnum : Enum
         {
@@ -73,6 +74,13 @@ namespace UnityEngine.Rendering
             return sampler;
 #endif
         }
+#else
+        public static ProfilingSampler Get<TEnum>(TEnum marker)
+            where TEnum : Enum
+        {
+            return null;
+        }
+#endif
 
         /// <summary>
         /// Constructor.
@@ -233,6 +241,18 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Profiling Scope constructor
         /// </summary>
+        /// <param name="sampler">Profiling Sampler to be used for this scope.</param>
+        public ProfilingScope(ProfilingSampler sampler)
+        {
+            m_Cmd = null;
+            m_Disposed = false;
+            m_Sampler = sampler;
+            m_Sampler?.Begin(m_Cmd);
+        }
+
+        /// <summary>
+        /// Profiling Scope constructor
+        /// </summary>
         /// <param name="cmd">Command buffer used to add markers and compute execution timings.</param>
         /// <param name="sampler">Profiling Sampler to be used for this scope.</param>
         public ProfilingScope(CommandBuffer cmd, ProfilingSampler sampler)
@@ -245,6 +265,26 @@ namespace UnityEngine.Rendering
             // Resulting in following pattern:
             // exec(cmd.start, scope.start, cmd.end) and exec(cmd.start, scope.end, cmd.end)
             m_Cmd = cmd;
+            m_Disposed = false;
+            m_Sampler = sampler;
+            m_Sampler?.Begin(m_Cmd);
+        }
+
+        /// <summary>
+        /// Profiling Scope constructor
+        /// </summary>
+        /// <param name="cmd">Command buffer used to add markers and compute execution timings.</param>
+        /// <param name="sampler">Profiling Sampler to be used for this scope.</param>
+        public ProfilingScope(BaseCommandBuffer cmd, ProfilingSampler sampler)
+        {
+            // NOTE: Do not mix with named CommandBuffers.
+            // Currently there's an issue which results in mismatched markers.
+            // The named CommandBuffer will close its "profiling scope" on execution.
+            // That will orphan ProfilingScope markers as the named CommandBuffer marker
+            // is their "parent".
+            // Resulting in following pattern:
+            // exec(cmd.start, scope.start, cmd.end) and exec(cmd.start, scope.end, cmd.end)
+            m_Cmd = cmd.m_WrappedCommandBuffer;
             m_Disposed = false;
             m_Sampler = sampler;
             m_Sampler?.Begin(m_Cmd);
@@ -284,9 +324,26 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Profiling Scope constructor
         /// </summary>
+        /// <param name="sampler">Profiling Sampler to be used for this scope.</param>
+        public ProfilingScope(ProfilingSampler sampler)
+        {
+        }
+
+        /// <summary>
+        /// Profiling Scope constructor
+        /// </summary>
         /// <param name="cmd">Command buffer used to add markers and compute execution timings.</param>
         /// <param name="sampler">Profiling Sampler to be used for this scope.</param>
         public ProfilingScope(CommandBuffer cmd, ProfilingSampler sampler)
+        {
+        }
+
+        /// <summary>
+        /// Profiling Scope constructor
+        /// </summary>
+        /// <param name="cmd">Command buffer used to add markers and compute execution timings.</param>
+        /// <param name="sampler">Profiling Sampler to be used for this scope.</param>
+        public ProfilingScope(BaseCommandBuffer cmd, ProfilingSampler sampler)
         {
         }
 

@@ -7,8 +7,9 @@ using System.Reflection;
 namespace UnityEngine.Rendering
 {
     /// <summary>
-    /// This attribute allows you to add commands to the <strong>Add Override</strong> popup menu
+    /// This attribute allows you to add commands to the <b>Add Override</b> popup menu
     /// on Volumes.
+    /// To filter VolumeComponentMenu based on current Render Pipeline, add SupportedOnRenderPipeline attribute to the class alongside with this attribute.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
     public class VolumeComponentMenu : Attribute
@@ -21,7 +22,7 @@ namespace UnityEngine.Rendering
         // TODO: Add support for component icons
 
         /// <summary>
-        /// Creates a new <seealso cref="VolumeComponentMenu"/> instance.
+        /// Creates a new <see cref="VolumeComponentMenu"/> instance.
         /// </summary>
         /// <param name="menu">The name of the entry in the override list. You can use slashes to
         /// create sub-menus.</param>
@@ -32,9 +33,10 @@ namespace UnityEngine.Rendering
     }
 
     /// <summary>
-    /// This attribute allows you to add commands to the <strong>Add Override</strong> popup menu
+    /// This attribute allows you to add commands to the <b>Add Override</b> popup menu
     /// on Volumes and specify for which render pipelines will be supported
     /// </summary>
+    [Obsolete(@"VolumeComponentMenuForRenderPipelineAttribute is deprecated. Use VolumeComponentMenu with SupportedOnCurrentPipeline instead. #from(2023.1)", false)]
     public class VolumeComponentMenuForRenderPipeline : VolumeComponentMenu
     {
         /// <summary>
@@ -43,7 +45,7 @@ namespace UnityEngine.Rendering
         public Type[] pipelineTypes { get; }
 
         /// <summary>
-        /// Creates a new <seealso cref="VolumeComponentMenuForRenderPipeline"/> instance.
+        /// Creates a new <see cref="VolumeComponentMenuForRenderPipeline"/> instance.
         /// </summary>
         /// <param name="menu">The name of the entry in the override list. You can use slashes to
         /// create sub-menus.</param>
@@ -100,7 +102,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         public sealed class Indent : PropertyAttribute
         {
-            /// <summary> Relative indent amount registered in this atribute </summary>
+            /// <summary> Relative indent amount registered in this attribute </summary>
             public readonly int relativeAmount;
 
             /// <summary> Constructor </summary>
@@ -218,7 +220,7 @@ namespace UnityEngine.Rendering
         /// the result of the interpolation in this same component.</param>
         /// <param name="interpFactor">The interpolation factor in range [0,1].</param>
         /// <example>
-        /// Below is the default implementation for blending:
+        /// <para> Below is the default implementation for blending:</para>
         /// <code>
         /// public virtual void Override(VolumeComponent state, float interpFactor)
         /// {
@@ -229,11 +231,12 @@ namespace UnityEngine.Rendering
         ///         var stateParam = state.parameters[i];
         ///         var toParam = parameters[i];
         ///
-        ///         // Keep track of the override state for debugging purpose
-        ///         stateParam.overrideState = toParam.overrideState;
-        ///
         ///         if (toParam.overrideState)
+        ///         {
+        ///             // Keep track of the override state to ensure that state will be reset on next frame (and for debugging purpose)
+        ///             stateParam.overrideState = toParam.overrideState;
         ///             stateParam.Interp(stateParam, toParam, interpFactor);
+        ///         }
         ///     }
         /// }
         /// </code>
@@ -249,7 +252,7 @@ namespace UnityEngine.Rendering
 
                 if (toParam.overrideState)
                 {
-                    // Keep track of the override state for debugging purpose
+                    // Keep track of the override state to ensure that state will be reset on next frame (and for debugging purpose)
                     stateParam.overrideState = toParam.overrideState;
                     stateParam.Interp(stateParam, toParam, interpFactor);
                 }

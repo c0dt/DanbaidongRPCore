@@ -1,7 +1,7 @@
 #ifndef UNITY_PACKING_INCLUDED
 #define UNITY_PACKING_INCLUDED
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH || defined(UNITY_UNIFIED_SHADER_PRECISION_MODEL)
 #pragma warning (disable : 3205) // conversion of larger type to smaller
 #endif
 
@@ -54,7 +54,7 @@ real3 UnpackNormalOctRectEncode(real2 f)
 // Ref: http://jcgt.org/published/0003/02/01/paper.pdf "A Survey of Efficient Representations for Independent Unit Vectors"
 // Encode with Oct, this function work with any size of output
 // return float between [-1, 1]
-float2 PackNormalOctQuadEncode(float3 n)
+real2 PackNormalOctQuadEncode(float3 n)
 {
     //float l1norm    = dot(abs(n), 1.0);
     //float2 res0     = n.xy * (1.0 / l1norm);
@@ -64,20 +64,20 @@ float2 PackNormalOctQuadEncode(float3 n)
 
     // Optimized version of above code:
     n *= rcp(max(dot(abs(n), 1.0), 1e-6));
-    float t = saturate(-n.z);
-    return n.xy + (n.xy >= 0.0 ? t : -t);
+    real t = saturate(-n.z);
+    return n.xy + real2(n.x >= 0.0 ? t : -t, n.y >= 0.0 ? t : -t);
 }
 
-float3 UnpackNormalOctQuadEncode(float2 f)
+real3 UnpackNormalOctQuadEncode(real2 f)
 {
-    float3 n = float3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    real3 n = real3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
 
     //float2 val = 1.0 - abs(n.yx);
     //n.xy = (n.zz < float2(0.0, 0.0) ? (n.xy >= 0.0 ? val : -val) : n.xy);
 
     // Optimized version of above code:
-    float t = max(-n.z, 0.0);
-    n.xy += n.xy >= 0.0 ? -t.xx : t.xx;
+    real t = max(-n.z, 0.0);
+    n.xy += real2(n.x >= 0.0 ? -t : t, n.y >= 0.0 ? -t : t);
 
     return normalize(n);
 }
@@ -231,9 +231,6 @@ real3 UnpackNormalScale(real4 packedNormal, real bumpScale)
 // HDR packing
 //-----------------------------------------------------------------------------
 
-// HDR Packing not defined in GLES2
-#if !defined(SHADER_API_GLES)
-
 // Ref: http://realtimecollisiondetection.net/blog/?p=15
 real4 PackToLogLuv(real3 vRGB)
 {
@@ -287,17 +284,6 @@ float3 UnpackFromR11G11B10f(uint rgb)
     return float3(r, g, b);
 }
 
-#endif // SHADER_API_GLES
-
-//-----------------------------------------------------------------------------
-// Color packing
-//-----------------------------------------------------------------------------
-
-float4 UnpackFromR8G8B8A8(uint rgba)
-{
-    return float4(rgba & 255, (rgba >> 8) & 255, (rgba >> 16) & 255, (rgba >> 24) & 255) * (1.0 / 255);
-}
-
 //-----------------------------------------------------------------------------
 // Quaternion packing
 //-----------------------------------------------------------------------------
@@ -348,9 +334,6 @@ real4 UnpackQuat(real4 packedQuat)
 
     return quat;
 }
-
-// Integer and Float packing not defined in GLES2
-#if !defined(SHADER_API_GLES)
 
 //-----------------------------------------------------------------------------
 // Integer packing
@@ -574,14 +557,11 @@ float2 Unpack888ToFloat2(float3 x)
     return Unpack888UIntToFloat2(i);
 }
 
-#endif // SHADER_API_GLES
-
 // Pack 2 float values from the [0, 1] range, to an 8 bits float from the [0, 1] range
 float PackFloat2To8(float2 f)
 {
-    float x_expanded = f.x * 15.0;                        // f.x encoded over 4 bits, can have 2^4 = 16 distinct values mapped to [0, 1, ..., 15]
-    float y_expanded = f.y * 15.0;                        // f.y encoded over 4 bits, can have 2^4 = 16 distinct values mapped to [0, 1, ..., 15]
-    float x_y_expanded = x_expanded * 16.0 + y_expanded;  // f.x encoded over higher bits, f.y encoded over the lower bits - x_y values in range [0, 1, ..., 255]
+    float2 i = floor(f * 15.0);                                         // f.x & f.y encoded over 4 bits, can have 2^4 = 16 distinct values mapped to [0, 1, ..., 15]
+    float x_y_expanded = i.x * 16.0 + i.y;                       // f.x encoded over higher bits, f.y encoded over the lower bits - x_y values in range [0, 1, ..., 255]
     return x_y_expanded / 255.0;
 
     // above 4 lines equivalent to:
@@ -599,7 +579,48 @@ float2 Unpack8ToFloat2(float f)
     return float2(x, y);
 }
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+//-----------------------------------------------------------------------------
+// Color packing
+//-----------------------------------------------------------------------------
+
+float4 UnpackFromR8G8B8A8(uint rgba)
+{
+    return float4(rgba & 255, (rgba >> 8) & 255, (rgba >> 16) & 255, (rgba >> 24) & 255) * (1.0 / 255);
+}
+
+float2 PackToR5G6B5(float3 rgb)
+{
+    uint rgb16 = (PackFloatToUInt(rgb.x, 0,  5) |
+                  PackFloatToUInt(rgb.y, 5,  6) |
+                  PackFloatToUInt(rgb.z, 11, 5));
+    return float2(PackByte(rgb16 >> 8), PackByte(rgb16 & 0xFF));
+}
+
+float3 UnpackFromR5G6B5(float2 rgb)
+{
+    uint rgb16 = (UnpackByte(rgb.x) << 8) | UnpackByte(rgb.y);
+    return float3(UnpackUIntToFloat(rgb16, 0,  5),
+                  UnpackUIntToFloat(rgb16, 5,  6),
+                  UnpackUIntToFloat(rgb16, 11, 5));
+}
+
+uint PackToR7G7B6(float3 rgb)
+{
+    uint rgb20 = (PackFloatToUInt(rgb.x, 0,  7) |
+                  PackFloatToUInt(rgb.y, 7,  7) |
+                  PackFloatToUInt(rgb.z, 14, 6));
+    return rgb20;
+}
+
+float3 UnpackFromR7G7B6(uint rgb)
+{
+    return float3(UnpackUIntToFloat(rgb, 0,  7),
+                  UnpackUIntToFloat(rgb, 7,  7),
+                  UnpackUIntToFloat(rgb, 14, 6));
+}
+
+
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH
 #pragma warning (enable : 3205) // conversion of larger type to smaller
 #endif
 

@@ -5,6 +5,29 @@ using System.Reflection;
 
 namespace UnityEngine.Rendering
 {
+    /// <summary>
+    /// Exposes settings for shader variants
+    /// </summary>
+    [Obsolete("Use GraphicsSettings.GetRenderPipelineSettings<ShaderStrippingSetting>(). #from(23.3)")]
+
+    public interface IShaderVariantSettings
+    {
+        /// <summary>
+        /// Specifies the level of the logging for shader variants
+        /// </summary>
+        ShaderVariantLogLevel shaderVariantLogLevel { get; set; }
+
+        /// <summary>
+        /// Specifies if the stripping of the shaders variants needs to be exported
+        /// </summary>
+        bool exportShaderVariants { get; set; }
+
+        /// <summary>
+        /// Controls whether debug display shaders for Rendering Debugger are available in Player builds.
+        /// </summary>
+        bool stripDebugVariants { get => false; set { } }
+    }
+
     public abstract partial class VolumeDebugSettings<T>
     {
         static List<Type> s_ComponentTypes;
@@ -76,7 +99,15 @@ namespace UnityEngine.Rendering
         /// Toggle the debug window.
         /// </summary>
         /// <param name="open">State of the debug window.</param>
-        [Obsolete("Use DebugManager.instance.displayEditorUI.open property instead. #from(23.1)")]
+        [Obsolete("Use DebugManager.instance.displayEditorUI property instead. #from(23.1)")]
         public void ToggleEditorUI(bool open) => editorUIState.open = open;
+    }
+
+    /// <summary>
+    /// A marker to adjust probes in an area of the scene.
+    /// </summary>
+    [Obsolete("ProbeTouchupVolume has been deprecated (UnityUpgradable) -> ProbeAdjustmentVolume", false)]
+    public class ProbeTouchupVolume : ProbeAdjustmentVolume
+    {
     }
 }

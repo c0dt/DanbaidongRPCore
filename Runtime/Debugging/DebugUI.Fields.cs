@@ -12,7 +12,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Generic field - will be serialized in the editor if it's not read-only
         /// </summary>
-        /// <typeparam name="T"></typeparam>
+        /// <typeparam name="T">The type of data managed by the field.</typeparam>
         public abstract class Field<T> : Widget, IValueField
         {
             /// <summary>
@@ -101,7 +101,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         public class BoolField : Field<bool> { }
         /// <summary>
-        /// Boolean field with history.
+        /// An array of checkboxes that Unity displays in a horizontal row.
         /// </summary>
         public class HistoryBoolField : BoolField
         {
@@ -128,7 +128,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Integer field.
+        /// A slider for an integer.
         /// </summary>
         public class IntField : Field<int>
         {
@@ -165,7 +165,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Unsigned integer field.
+        /// A slider for a positive integer.
         /// </summary>
         public class UIntField : Field<uint>
         {
@@ -202,7 +202,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Float field.
+        /// A slider for a float.
         /// </summary>
         public class FloatField : Field<float>
         {
@@ -301,7 +301,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Enumerator field.
+        /// A dropdown that contains the values from an enum.
         /// </summary>
         public class EnumField : EnumField<int>
         {
@@ -388,7 +388,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Object PopupField
+        /// A dropdown that contains a list of Unity objects.
         /// </summary>
         public class ObjectPopupField : Field<Object>
         {
@@ -560,7 +560,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Object field.
+        /// A field for selecting a Unity object.
         /// </summary>
         public class ObjectField : Field<Object>
         {
@@ -571,7 +571,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Object list field.
+        /// A list of fields for selecting Unity objects.
         /// </summary>
         public class ObjectListField : Field<Object[]>
         {
@@ -582,7 +582,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Simple message box widget, providing a couple of different styles.
+        /// A read-only message box with an icon.
         /// </summary>
         public class MessageBox : Widget
         {
@@ -609,6 +609,41 @@ namespace UnityEngine.Rendering
             /// Style used to render displayName.
             /// </summary>
             public Style style = Style.Info;
+
+            /// <summary>
+            /// Message Callback to feed the new message to the widget
+            /// </summary>
+            public Func<string> messageCallback = null;
+
+            /// <summary>
+            /// This obtains the message from the display name or from the message callback if it is not null
+            /// </summary>
+            public string message => messageCallback == null ? displayName : messageCallback();
+        }
+
+        /// <summary>
+        /// Widget that will show into the Runtime UI only
+        /// Warning the user if the Runtime Debug Shaders variants are being stripped from the build.
+        /// </summary>
+        public class RuntimeDebugShadersMessageBox : MessageBox
+        {
+            /// <summary>
+            /// Constructs a <see cref="RuntimeDebugShadersMessageBox"/>
+            /// </summary>
+            public RuntimeDebugShadersMessageBox()
+            {
+                displayName =
+                    "Warning: the debug shader variants are missing. Ensure that the \"Strip Runtime Debug Shaders\" option is disabled in the SRP Graphics Settings.";
+                style = DebugUI.MessageBox.Style.Warning;
+                isHiddenCallback = () =>
+                {
+#if !UNITY_EDITOR
+                    if (GraphicsSettings.TryGetRenderPipelineSettings<ShaderStrippingSetting>(out var shaderStrippingSetting))
+                        return !shaderStrippingSetting.stripRuntimeDebugShaders;
+#endif
+                    return true;
+                };
+            }
         }
     }
 }

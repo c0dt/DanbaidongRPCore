@@ -22,25 +22,21 @@ namespace UnityEditor.Rendering
 
             GIContributors.ContributorFilter? filter = null;
 
-            if (GUILayout.Button(EditorGUIUtility.TrTextContent("Fit to All Scenes", "Fit this Probe Volume to cover all loaded Scenes. "), EditorStyles.miniButton))
+            if (GUILayout.Button(EditorGUIUtility.TrTextContent("Fit to All Scenes", "Fit this Adaptive Probe Volume to cover all loaded Scenes. "), EditorStyles.miniButton))
                 filter = GIContributors.ContributorFilter.All;
-            if (GUILayout.Button(EditorGUIUtility.TrTextContent("Fit to Scene", "Fit this Probe Volume to the renderers in the same Scene."), EditorStyles.miniButton))
+            if (GUILayout.Button(EditorGUIUtility.TrTextContent("Fit to Scene", "Fit this Adaptive Probe Volume to the renderers in the same Scene."), EditorStyles.miniButton))
                 filter = GIContributors.ContributorFilter.Scene;
-            if (GUILayout.Button(EditorGUIUtility.TrTextContent("Fit to Selection", "Fits the Probe Volume's boundary to the selected GameObjects. Lock the Probe Volume's Inspector to allow for the selection of other GameObjects."), EditorStyles.miniButton))
+            if (GUILayout.Button(EditorGUIUtility.TrTextContent("Fit to Selection", "Fits this Adaptive Probe Volume to the selected renderer(s). Lock the Inspector to make additional selections."), EditorStyles.miniButton))
                 filter = GIContributors.ContributorFilter.Selection;
 
             if (filter.HasValue)
             {
-                Undo.RecordObject(pv.transform, "Fitting Probe Volume");
+                Undo.RecordObject(pv.transform, "Fitting Adaptive Probe Volume");
 
                 // Get minBrickSize from scene profile if available
                 float minBrickSize = ProbeReferenceVolume.instance.MinBrickSize();
-                if (ProbeReferenceVolume.instance.sceneData != null)
-                {
-                    var profile = ProbeReferenceVolume.instance.sceneData.GetProfileForScene(pv.gameObject.scene);
-                    if (profile != null)
-                        minBrickSize = profile.minBrickSize;
-                }
+                if (ProbeReferenceVolume.instance.TryGetBakingSetForLoadedScene(pv.gameObject.scene, out var profile))
+                    minBrickSize = profile.minBrickSize;
 
                 var bounds = pv.ComputeBounds(filter.Value, pv.gameObject.scene);
                 pv.transform.position = bounds.center;
@@ -87,7 +83,7 @@ namespace UnityEditor.Rendering
                     serialized.lowestSubdivisionLevelOverride.intValue = Mathf.RoundToInt(lowest);
                 }
 
-                ProbeReferenceVolumeProfileEditor.DrawSimplificationLevelsMarkers(rect, minDistance, 0, maxSubdiv, (int)highest, (int)lowest);
+                ProbeVolumeLightingTab.DrawSimplificationLevelsMarkers(rect, minDistance, 0, maxSubdiv, (int)highest, (int)lowest);
             }
 
             EditorGUI.EndProperty();
@@ -99,7 +95,9 @@ namespace UnityEditor.Rendering
         {
             ProbeVolume pv = (serialized.serializedObject.targetObject as ProbeVolume);
 
-            bool hasProfile = (ProbeReferenceVolume.instance.sceneData?.GetProfileForScene(pv.gameObject.scene) != null);
+            ProbeReferenceVolume.instance.TryGetBakingSetForLoadedScene(pv.gameObject.scene, out var bakingSet);
+            if (bakingSet == null)
+                bakingSet = ProbeVolumeLightingTab.GetSingleSceneSet(pv.gameObject.scene);
 
             EditorGUILayout.PropertyField(serialized.mode);
             if (serialized.mode.intValue == (int)ProbeVolume.Mode.Local)
@@ -112,55 +110,37 @@ namespace UnityEditor.Rendering
                 Drawer_BakeToolBar(serialized, owner);
             }
 
-            if (!hasProfile)
-            {
-                EditorGUILayout.HelpBox("No profile information is set for the scene that owns this probe volume so no subdivision information can be retrieved.", MessageType.Warning);
-            }
-
-            bool isFreezingPlacement = ProbeGIBaking.isFreezingPlacement;
-
             EditorGUILayout.Space();
-            EditorGUI.BeginDisabledGroup(!hasProfile);
 
-            if (isFreezingPlacement)
-            {
-                CoreEditorUtils.DrawFixMeBox("The placement is frozen in the baking settings. To change these values uncheck the Freeze Placement in the Probe Volume Settings Window.", MessageType.None, "Open", () =>
-                {
-                    var window = (ProbeVolumeBakingWindow)UnityEditor.EditorWindow.GetWindow(typeof(ProbeVolumeBakingWindow), utility: false, title: null, focus: true);
-                });
-            }
-
-            using (new EditorGUI.DisabledGroupScope(isFreezingPlacement))
+            EditorGUILayout.LabelField("Subdivision Override", EditorStyles.boldLabel);
+            bool isFreezingPlacement = bakingSet != null && bakingSet.freezePlacement && AdaptiveProbeVolumes.CanFreezePlacement();
+            using (new EditorGUI.DisabledScope(isFreezingPlacement))
             {
                 // Get settings from scene profile if available
                 int maxSubdiv = ProbeReferenceVolume.instance.GetMaxSubdivision() - 1;
                 float minDistance = ProbeReferenceVolume.instance.MinDistanceBetweenProbes();
-                if (ProbeReferenceVolume.instance.sceneData != null)
+                if (bakingSet != null)
                 {
-                    var profile = ProbeReferenceVolume.instance.sceneData.GetProfileForScene(pv.gameObject.scene);
-                    if (profile != null)
-                    {
-                        maxSubdiv = profile.maxSubdivision - 1;
-                        minDistance = profile.minDistanceBetweenProbes;
-                    }
+                    maxSubdiv = bakingSet.simplificationLevels;
+                    minDistance = bakingSet.minDistanceBetweenProbes;
+                }
+                if (maxSubdiv == -1)
+                {
+                    maxSubdiv = 5;
+                    minDistance = 1;
                 }
                 maxSubdiv = Mathf.Max(0, maxSubdiv);
 
-                EditorGUILayout.LabelField("Subdivision Override", EditorStyles.boldLabel);
                 SubdivisionRange(serialized, maxSubdiv, minDistance);
-
-                if (hasProfile)
-                {
-                    int minSubdivInVolume = serialized.overridesSubdivision.boolValue ? serialized.lowestSubdivisionLevelOverride.intValue : 0;
-                    int maxSubdivInVolume = serialized.overridesSubdivision.boolValue ? serialized.highestSubdivisionLevelOverride.intValue : maxSubdiv;
-
-                    EditorGUILayout.HelpBox($"Number of simplification levels will vary between {maxSubdiv - maxSubdivInVolume} and {maxSubdiv - minSubdivInVolume}", MessageType.Info);
-                }
-
-                EditorGUILayout.Space();
             }
 
-            EditorGUI.EndDisabledGroup();
+            if (isFreezingPlacement)
+            {
+                CoreEditorUtils.DrawFixMeBox("The placement is frozen in the baking settings. To change these values uncheck the Freeze Placement in the Adaptive Probe Volumes tab of the Lighting Window.", MessageType.Info, "Open", () =>
+                {
+                    ProbeVolumeLightingTab.OpenBakingSet(bakingSet);
+                });
+            }
 
             EditorGUILayout.LabelField("Geometry Settings", EditorStyles.boldLabel);
 
@@ -174,6 +154,18 @@ namespace UnityEditor.Rendering
             }
 
             EditorGUILayout.PropertyField(serialized.fillEmptySpaces);
+
+            if (bakingSet == null)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.HelpBox("The scene this Adaptive Probe Volume is part of does not belong to any Baking Set.", MessageType.Warning);
+            }
+
+            EditorGUILayout.Space();
+            using (new EditorGUI.DisabledScope(bakingSet == null))
+            {
+                ProbeVolumeLightingTab.BakeAPVButton();
+            }
         }
 
         static void Drawer_RebakeWarning(SerializedProbeVolume serialized, Editor owner)

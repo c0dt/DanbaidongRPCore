@@ -19,7 +19,7 @@ namespace UnityEngine.Rendering
         /// An indexer that allows access to the bit at a given index. This provides both read and write access.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         bool this[uint index] { get; set; }
         /// <summary>Writes the bits in the array in a human-readable form. This is as a string of 0s and 1s packed by 8 bits. This is useful for debugging.</summary>
         string humanizedData { get; }
@@ -39,7 +39,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Return the BitArray with every bit inverted.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The resulting bit array.</returns>
         IBitArray BitNot();
     }
 
@@ -70,7 +70,7 @@ namespace UnityEngine.Rendering
         /// Returns the state of the bit at a specific index.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         public bool this[uint index]
         {
             get => BitArrayUtilities.Get8(index, data);
@@ -157,7 +157,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="obj">Bit array to compare to.</param>
         /// <returns>True if the provided bit array is equal to this..</returns>
-        public override bool Equals(object obj) => obj is BitArray8 && ((BitArray8)obj).data == data;
+        public override bool Equals(object obj) => obj is BitArray8 ba8 && ba8.data == data;
         /// <summary>
         /// Get the hashcode of the bit array.
         /// </summary>
@@ -188,7 +188,7 @@ namespace UnityEngine.Rendering
         /// Returns the state of the bit at a specific index.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         public bool this[uint index]
         {
             get => BitArrayUtilities.Get16(index, data);
@@ -276,7 +276,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="obj">Bit array to compare to.</param>
         /// <returns>True if the provided bit array is equal to this..</returns>
-        public override bool Equals(object obj) => obj is BitArray16 && ((BitArray16)obj).data == data;
+        public override bool Equals(object obj) => obj is BitArray16 ba16 && ba16.data == data;
         /// <summary>
         /// Get the hashcode of the bit array.
         /// </summary>
@@ -308,7 +308,7 @@ namespace UnityEngine.Rendering
         /// Returns the state of the bit at a specific index.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         public bool this[uint index]
         {
             get => BitArrayUtilities.Get32(index, data);
@@ -396,7 +396,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="obj">Bit array to compare to.</param>
         /// <returns>True if the provided bit array is equal to this..</returns>
-        public override bool Equals(object obj) => obj is BitArray32 && ((BitArray32)obj).data == data;
+        public override bool Equals(object obj) => obj is BitArray32 ba32 && ba32.data == data;
         /// <summary>
         /// Get the hashcode of the bit array.
         /// </summary>
@@ -427,7 +427,7 @@ namespace UnityEngine.Rendering
         /// Returns the state of the bit at a specific index.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         public bool this[uint index]
         {
             get => BitArrayUtilities.Get64(index, data);
@@ -515,7 +515,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="obj">Bit array to compare to.</param>
         /// <returns>True if the provided bit array is equal to this..</returns>
-        public override bool Equals(object obj) => obj is BitArray64 && ((BitArray64)obj).data == data;
+        public override bool Equals(object obj) => obj is BitArray64 ba64 && ba64.data == data;
         /// <summary>
         /// Get the hashcode of the bit array.
         /// </summary>
@@ -550,11 +550,20 @@ namespace UnityEngine.Rendering
         /// Returns the state of the bit at a specific index.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         public bool this[uint index]
         {
-            get => BitArrayUtilities.Get128(index, data1, data2);
-            set => BitArrayUtilities.Set128(index, ref data1, ref data2, value);
+            get => index < 64u
+                ? (data1 & (1uL << (int)index)) != 0uL
+                : (data2 & (1uL << (int)(index - 64u))) != 0uL;
+
+            set
+            {
+                if (index < 64u)
+                    data1 = (value ? (data1 | (1uL << (int)index)) : (data1 & ~(1uL << (int)index)));
+                else
+                    data2 = (value ? (data2 | (1uL << (int)(index - 64u))) : (data2 & ~(1uL << (int)(index - 64u))));
+            }
         }
 
         /// <summary>
@@ -646,7 +655,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="obj">Bit array to compare to.</param>
         /// <returns>True if the provided bit array is equal to this..</returns>
-        public override bool Equals(object obj) => (obj is BitArray128) && data1.Equals(((BitArray128)obj).data1) && data2.Equals(((BitArray128)obj).data2);
+        public override bool Equals(object obj) => obj is BitArray128 ba128 && data1.Equals(ba128.data1) && data2.Equals(ba128.data2);
         /// <summary>
         /// Get the hashcode of the bit array.
         /// </summary>
@@ -693,7 +702,7 @@ namespace UnityEngine.Rendering
         /// Returns the state of the bit at a specific index.
         /// </summary>
         /// <param name="index">Index of the bit.</param>
-        /// <returns>State of the bit at the provided index.</returns>
+        /// <value>State of the bit at the provided index.</value>
         public bool this[uint index]
         {
             get => BitArrayUtilities.Get256(index, data1, data2, data3, data4);
@@ -796,12 +805,12 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="obj">Bit array to compare to.</param>
         /// <returns>True if the provided bit array is equal to this..</returns>
-        public override bool Equals(object obj) =>
-            (obj is BitArray256)
-            && data1.Equals(((BitArray256)obj).data1)
-            && data2.Equals(((BitArray256)obj).data2)
-            && data3.Equals(((BitArray256)obj).data3)
-            && data4.Equals(((BitArray256)obj).data4);
+        public override bool Equals(object obj)
+            => obj is BitArray256 ba256
+            && data1.Equals(ba256.data1)
+            && data2.Equals(ba256.data2)
+            && data3.Equals(ba256.data3)
+            && data4.Equals(ba256.data4);
         /// <summary>
         /// Get the hashcode of the bit array.
         /// </summary>

@@ -2,7 +2,7 @@ using System;
 using System.Text;
 using System.Collections.Generic;
 
-namespace UnityEngine.Experimental.Rendering.RenderGraphModule
+namespace UnityEngine.Rendering.RenderGraphModule
 {
     struct RenderGraphLogIndent : IDisposable
     {
@@ -97,6 +97,8 @@ namespace UnityEngine.Experimental.Rendering.RenderGraphModule
 
                 result += builder.ToString();
             }
+
+            m_LogMap.Clear();
 
             return result;
         }

@@ -6,6 +6,7 @@ namespace UnityEngine.Rendering
     /// <summary>
     /// The format of the delegate used to perofrm dynamic resolution.
     /// </summary>
+    /// <returns>A float value representing the scale factor for dynamic resolution.</returns>
     public delegate float PerformDynamicRes();
 
     /// <summary>
@@ -117,8 +118,13 @@ namespace UnityEngine.Rendering
         public bool runUpscalerFilterOnFullResolution
         {
             set { m_RunUpscalerFilterOnFullResolution = value; }
-            get { return m_RunUpscalerFilterOnFullResolution || filter == DynamicResUpscaleFilter.EdgeAdaptiveScalingUpres; }
+            get { return m_RunUpscalerFilterOnFullResolution || (filter == DynamicResUpscaleFilter.EdgeAdaptiveScalingUpres); }
         }
+
+        /// <summary>
+        /// True if the resolution is being forced to a fixed value rather than varying dynamically within a range. Otherwise, false.
+        /// </summary>
+        public bool forcingResolution { get { return m_ForcingRes; } }
 
         private DynamicResolutionType type;
 
@@ -598,12 +604,23 @@ namespace UnityEngine.Rendering
         ///     This allows the caller to directly compare the float result safely with the floating point target resolution.
         /// </param>
         /// <returns>Returns the resolved low res multiplier based on the low transparency threshold settings.</returns>
-        public float GetLowResMultiplier(float targetLowRes)
+        public float GetLowResMultiplier(float targetLowRes) => GetLowResMultiplier(targetLowRes, m_CachedSettings.lowResTransparencyMinimumThreshold );
+
+        /// <summary>
+        /// Returns the resolved low res multiplier based on the a low res threshold.
+        /// </summary>
+        /// <param name="targetLowRes"> the target low resolution.
+        ///     If by any chance thresholding is disabled or clamped, the exact same resolution is returned.
+        ///     This allows the caller to directly compare the float result safely with the floating point target resolution.
+        /// </param>
+        /// <param name="minimumThreshold"> The custom threshold used to clamp the effect's resolution. </param>
+        /// <returns>Returns the resolved low res multiplier based on the minimumThreshold threshold settings.</returns>
+        public float GetLowResMultiplier(float targetLowRes, float minimumThreshold)
         {
             if (!m_Enabled)
                 return targetLowRes;
 
-            float thresholdPercentage = Math.Min(m_CachedSettings.lowResTransparencyMinimumThreshold / 100.0f, targetLowRes);
+            float thresholdPercentage = Math.Min(minimumThreshold / 100.0f, targetLowRes);
             float targetPercentage = targetLowRes * m_CurrentFraction;
             if (targetPercentage >= thresholdPercentage)
                 return targetLowRes;

@@ -2,29 +2,20 @@
 #define UNITY_CORE_BLIT_COLOR_AND_DEPTH_INCLUDED
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/GlobalSamplers.hlsl"
 
 TEXTURE2D (_BlitTexture);
 TEXTURE2D (_InputDepthTexture);
-SamplerState sampler_PointClamp;
-SamplerState sampler_LinearClamp;
 uniform float4 _BlitScaleBias;
 uniform float _BlitMipLevel;
 
-#if SHADER_API_GLES
-struct Attributes
-{
-    float4 positionOS       : POSITION;
-    float2 uv               : TEXCOORD0;
-    UNITY_VERTEX_INPUT_INSTANCE_ID
-};
-#else
 struct Attributes
 {
     uint vertexID : SV_VertexID;
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
-#endif
 
 struct Varyings
 {
@@ -39,16 +30,12 @@ Varyings Vert(Attributes input)
     UNITY_SETUP_INSTANCE_ID(input);
     UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
-#if SHADER_API_GLES
-    float4 pos = input.positionOS;
-    float2 uv  = input.uv;
-#else
     float4 pos = GetFullScreenTriangleVertexPosition(input.vertexID);
     float2 uv  = GetFullScreenTriangleTexCoord(input.vertexID);
-#endif
 
     output.positionCS = pos;
-    output.texcoord   = uv * _BlitScaleBias.xy + _BlitScaleBias.zw;
+    output.texcoord   = DYNAMIC_SCALING_APPLY_SCALEBIAS(uv);
+
     return output;
 }
 

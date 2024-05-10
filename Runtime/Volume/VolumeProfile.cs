@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine.Assertions;
 
 namespace UnityEngine.Rendering
@@ -7,7 +8,8 @@ namespace UnityEngine.Rendering
     /// <summary>
     /// An Asset which holds a set of settings to use with a <see cref="Volume"/>.
     /// </summary>
-    [CoreRPHelpURL("Volume-Profile", "com.unity.render-pipelines.high-definition")]
+    [CurrentPipelineHelpURL("Volume-Profile")]
+    [Icon("Packages/com.unity.render-pipelines.core/Editor/Icons/Processed/VolumeProfile Icon.asset")]
     public sealed class VolumeProfile : ScriptableObject
     {
         /// <summary>
@@ -40,7 +42,7 @@ namespace UnityEngine.Rendering
         {
             if (components == null)
                return;
-               
+
             for (int i = 0; i < components.Count; i++)
             {
                 if (components[i] != null)
@@ -84,7 +86,7 @@ namespace UnityEngine.Rendering
         /// <param name="overrides">Specifies whether Unity should automatically override all the settings when
         /// you add a <see cref="VolumeComponent"/> to the Volume Profile.</param>
         /// <returns>The instance created for the given type that has been added to the profile</returns>
-        /// <see cref="Add{T}"/>
+        /// <seealso cref="Add{T}"/>
         public VolumeComponent Add(Type type, bool overrides = false)
         {
             if (Has(type))
@@ -243,7 +245,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Gets the <seealso cref="VolumeComponent"/>, which is a subclass of <paramref name="type"/>, if
+        /// Gets the <see cref="VolumeComponent"/>, which is a subclass of <paramref name="type"/>, if
         /// it exists.
         /// </summary>
         /// <typeparam name="T">A type of <see cref="VolumeComponent"/>.</typeparam>
@@ -273,12 +275,12 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Gets all the <seealso cref="VolumeComponent"/> that are subclasses of the specified type,
+        /// Gets all the <see cref="VolumeComponent"/> that are subclasses of the specified type,
         /// if there are any.
         /// </summary>
         /// <typeparam name="T">A type of <see cref="VolumeComponent"/>.</typeparam>
         /// <param name="type">A type that inherits from <see cref="VolumeComponent"/>.</param>
-        /// <param name="result">The output list that contains all the <seealso cref="VolumeComponent"/>
+        /// <param name="result">The output list that contains all the <see cref="VolumeComponent"/>
         /// if any. Note that Unity does not clear this list.</param>
         /// <returns><c>true</c> if any <see cref="VolumeComponent"/> have been found in the profile,
         /// <c>false</c> otherwise.</returns>
@@ -339,5 +341,19 @@ namespace UnityEngine.Rendering
                 if (components[i] == null)
                     components.RemoveAt(i);
         }
+
+#if UNITY_EDITOR
+        void OnValidate()
+        {
+            // Delay the callback because when undoing the deletion of a VolumeComponent from a profile,
+            // it's possible VolumeComponent.OnEnable() has not yet been called, resulting in a crash when trying to
+            // update the default state.
+            EditorApplication.delayCall += () =>
+            {
+                if (VolumeManager.instance.isInitialized)
+                    VolumeManager.instance.OnVolumeProfileChanged(this);
+            };
+        }
+#endif
     }
 }

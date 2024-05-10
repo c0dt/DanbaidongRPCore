@@ -1,7 +1,7 @@
 #ifndef UNITY_IMAGE_BASED_LIGHTING_HLSL_INCLUDED
 #define UNITY_IMAGE_BASED_LIGHTING_HLSL_INCLUDED
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH || defined(UNITY_UNIFIED_SHADER_PRECISION_MODEL)
 #pragma warning (disable : 3205) // conversion of larger type to smaller
 #endif
 
@@ -335,7 +335,6 @@ void ImportanceSampleAnisoGGX(real2   u,
 // Pre-integration
 // ----------------------------------------------------------------------------
 
-#if !defined SHADER_API_GLES
 // Ref: Listing 18 in "Moving Frostbite to PBR" + https://knarkowicz.wordpress.com/2014/12/27/analytical-dfg-term-for-ibl/
 real4 IntegrateGGXAndDisneyDiffuseFGD(real NdotV, real roughness, uint sampleCount = 4096)
 {
@@ -391,10 +390,6 @@ real4 IntegrateGGXAndDisneyDiffuseFGD(real NdotV, real roughness, uint sampleCou
 
     return acc;
 }
-#else
-// Not supported due to lack of random library in GLES 2
-#define IntegrateGGXAndDisneyDiffuseFGD ERROR_ON_UNSUPPORTED_FUNCTION(IntegrateGGXAndDisneyDiffuseFGD)
-#endif
 
 uint GetIBLRuntimeFilterSampleCount(uint mipLevel)
 {
@@ -421,7 +416,7 @@ uint GetIBLRuntimeFilterSampleCount(uint mipLevel)
 }
 
 // Ref: Listing 19 in "Moving Frostbite to PBR"
-real4 IntegrateLD(TEXTURECUBE_PARAM(tex, sampl),
+float4 IntegrateLD(TEXTURECUBE_PARAM(tex, sampl),
                    TEXTURE2D(ggxIblSamples),
                    real3 V,
                    real3 N,
@@ -439,8 +434,8 @@ real4 IntegrateLD(TEXTURECUBE_PARAM(tex, sampl),
     real partLambdaV = GetSmithJointGGXPartLambdaV(NdotV, roughness);
 #endif
 
-    real3 lightInt = real3(0.0, 0.0, 0.0);
-    real  cbsdfInt = 0.0;
+    float3 lightInt = float3(0.0, 0.0, 0.0);
+    float  cbsdfInt = 0.0;
 
     for (uint i = 0; i < sampleCount; ++i)
     {
@@ -534,7 +529,7 @@ real4 IntegrateLD(TEXTURECUBE_PARAM(tex, sampl),
     #endif
     }
 
-    return real4(lightInt / cbsdfInt, 1.0);
+    return float4(lightInt / cbsdfInt, 1.0);
 }
 
 real4 IntegrateLDCharlie(TEXTURECUBE_PARAM(tex, sampl),
@@ -610,7 +605,6 @@ uint BinarySearchRow(uint j, real needle, TEXTURE2D(haystack), uint n)
     return i;
 }
 
-#if !defined SHADER_API_GLES
 real4 IntegrateLD_MIS(TEXTURECUBE_PARAM(envMap, sampler_envMap),
                        TEXTURE2D(marginalRowDensities),
                        TEXTURE2D(conditionalDensities),
@@ -693,10 +687,6 @@ real4 IntegrateLD_MIS(TEXTURECUBE_PARAM(envMap, sampler_envMap),
 
     return real4(lightInt / cbsdfInt, 1.0);
 }
-#else
-// Not supported due to lack of random library in GLES 2
-#define IntegrateLD_MIS ERROR_ON_UNSUPPORTED_FUNCTION(IntegrateLD_MIS)
-#endif
 
 // Little helper to share code between sphere and box reflection probe.
 // This function will fade the mask of a reflection volume based on normal orientation compare to direction define by the center of the reflection volume.
@@ -706,7 +696,7 @@ float InfluenceFadeNormalWeight(float3 normal, float3 centerToPos)
     return saturate((-1.0f / 0.4f) * dot(normal, centerToPos) + (0.6f / 0.4f));
 }
 
-#if SHADER_API_MOBILE || SHADER_API_GLES || SHADER_API_GLES3
+#if SHADER_API_MOBILE || SHADER_API_GLES3 || SHADER_API_SWITCH
 #pragma warning (enable : 3205) // conversion of larger type to smaller
 #endif
 

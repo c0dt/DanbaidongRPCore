@@ -1,3 +1,4 @@
+using System;
 using UnityEngine.UI;
 
 namespace UnityEngine.Rendering.UI
@@ -36,12 +37,17 @@ namespace UnityEngine.Rendering.UI
             }
         }
 
+        void Update()
+        {
+            nameLabel.text = m_Field.message;
+        }
+
         /// <summary>
         /// Method called when the box is selected
         /// </summary>
         /// <param name="fromNext">If is from next</param>
         /// <param name="previous">The previous <see cref="DebugUIHandlerWidget"/></param>
-        /// <returns></returns>
+        /// <returns>Always returns false, indicating no special handling on selection.</returns>
         public override bool OnSelection(bool fromNext, DebugUIHandlerWidget previous)
         {
             return false;

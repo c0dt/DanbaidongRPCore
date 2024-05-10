@@ -1,12 +1,63 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine.Rendering;
+
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace UnityEngine.Rendering
 {
     /// <summary>
+    /// This struct contains some static helpers that can be used when converting RTid to RThandle
+    /// The common use case is to convert rtId to rtHandle and use the handle with other handle compatible core APIs
+    /// </summary>
+    public struct RTHandleStaticHelpers
+    {
+        /// <summary>
+        /// Static RTHandle wrapper around RenderTargetIdentifier to avoid gc.alloc
+        /// Set this wrapper through `RTHandleStaticHelpers.SetRTHandleStaticWrapper`
+        /// </summary>
+        public static RTHandle s_RTHandleWrapper;
+
+        /// <summary>
+        /// Set static RTHandle wrapper given a RTid. The static RTHandle wrapper is treated as external handle in RTHandleSystem
+        /// Get the static wrapper through `RTHandleStaticHelpers.s_RTHandleWrapper`.
+        /// </summary>
+        /// <param name="rtId">Input render target identifier to be converted.</param>
+        public static void SetRTHandleStaticWrapper(RenderTargetIdentifier rtId)
+        {
+            if (s_RTHandleWrapper == null)
+                s_RTHandleWrapper = RTHandles.Alloc(rtId);
+            else
+                s_RTHandleWrapper.SetTexture(rtId);
+        }
+
+        /// <summary>
+        /// Set user managed RTHandle wrapper given a RTid. The wrapper is treated as external handle in RTHandleSystem
+        /// </summary>
+        /// <param name="rtWrapper">User managed RTHandle wrapper.</param>
+        /// <param name="rtId">Input render target identifier to be set.</param>
+        public static void SetRTHandleUserManagedWrapper(ref RTHandle rtWrapper, RenderTargetIdentifier rtId)
+        {
+            // User managed wrapper is null, just return here.
+            if (rtWrapper == null)
+                return;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            // Check user managed RTHandle wrapper is actually a wrapper around RTid
+            if (rtWrapper.m_RT != null)
+                throw new ArgumentException($"Input wrapper must be a wrapper around RenderTargetIdentifier. Passed in wrapper contains valid RenderTexture {rtWrapper.m_RT.name} and cannot be used as wrapper.");
+            if (rtWrapper.m_ExternalTexture != null)
+                throw new ArgumentException($"Input wrapper must be a wrapper around RenderTargetIdentifier. Passed in wrapper contains valid Texture {rtWrapper.m_ExternalTexture.name} and cannot be used as wrapper.");
+#endif
+            rtWrapper.SetTexture(rtId);
+        }
+    }
+
+    /// <summary>
     /// A RTHandle is a RenderTexture that scales automatically with the camera size.
     /// This allows proper reutilization of RenderTexture memory when different cameras with various sizes are used during rendering.
-    /// <seealso cref="RTHandleSystem"/>
+    /// <see cref="RTHandleSystem"/>
     /// </summary>
     public class RTHandle
     {
@@ -17,6 +68,7 @@ namespace UnityEngine.Rendering
         internal bool m_EnableMSAA = false;
         internal bool m_EnableRandomWrite = false;
         internal bool m_EnableHWDynamicScale = false;
+        internal bool m_RTHasOwnership = true;
         internal string m_Name;
 
         internal bool m_UseCustomHandleScales = false;
@@ -64,6 +116,10 @@ namespace UnityEngine.Rendering
         /// RenderTexture associated with the RTHandle
         /// </summary>
         public RenderTexture rt { get { return m_RT; } }
+        /// <summary>
+        /// Texture associated with the RTHandle when constructed from an external Texture or RenderTexture
+        /// </summary>
+        public Texture externalTexture { get { return m_ExternalTexture; } }
         /// <summary>
         /// RenderTargetIdentifier associated with the RTHandle
         /// </summary>
@@ -124,10 +180,11 @@ namespace UnityEngine.Rendering
             return handle.rt;
         }
 
-        internal void SetRenderTexture(RenderTexture rt)
+        internal void SetRenderTexture(RenderTexture rt, bool transferOwnership = true)
         {
             m_RT = rt;
             m_ExternalTexture = null;
+            m_RTHasOwnership = transferOwnership;
             m_NameID = new RenderTargetIdentifier(rt);
         }
 
@@ -165,10 +222,12 @@ namespace UnityEngine.Rendering
         public void Release()
         {
             m_Owner.Remove(this);
-            CoreUtils.Destroy(m_RT);
+            if (m_RTHasOwnership)
+                CoreUtils.Destroy(m_RT);
             m_NameID = BuiltinRenderTextureType.None;
             m_RT = null;
             m_ExternalTexture = null;
+            m_RTHasOwnership = true;
         }
 
         /// <summary>

@@ -121,30 +121,17 @@ namespace UnityEditor.Rendering
     /// </summary>
     class ShaderStrippingReportScope : IPostprocessBuildWithReport, IPreprocessBuildWithReport
     {
-        internal static bool s_DefaultExport = false; // This variable is used by reflection by unit tests
-
         public int callbackOrder => 0;
 
         public void OnPreprocessBuild(BuildReport report)
         {
-            ShaderVariantLogLevel logStrippedVariants = ShaderVariantLogLevel.Disabled;
-            bool exportStrippedVariants = s_DefaultExport;
-
-            // Check the current pipeline and check the shader variant settings
-            if (RenderPipelineManager.currentPipeline != null && RenderPipelineManager.currentPipeline.defaultSettings is IShaderVariantSettings shaderVariantSettings)
-            {
-                logStrippedVariants = shaderVariantSettings.shaderVariantLogLevel;
-                exportStrippedVariants = shaderVariantSettings.exportShaderVariants;
-            }
-
-            ShaderStripping.reporter = (logStrippedVariants == ShaderVariantLogLevel.Disabled && exportStrippedVariants == false) ?
-                new ShaderStrippingReportEmpty() : new ShaderStrippingReport(logStrippedVariants, exportStrippedVariants);
+            bool isDevelopmentBuild = (report.summary.options & BuildOptions.Development) != 0;
+            ShaderStripping.ReportBegin(isDevelopmentBuild);
         }
 
         public void OnPostprocessBuild(BuildReport report)
         {
-            ShaderStripping.reporter.DumpReport();
-            ShaderStripping.reporter = null;
+            ShaderStripping.ReportEnd();
         }
     }
 
@@ -170,7 +157,7 @@ namespace UnityEditor.Rendering
         public ShaderStrippingReportLogger()
         {
             // Check the current pipeline and check the shader variant settings
-            if (RenderPipelineManager.currentPipeline != null && RenderPipelineManager.currentPipeline.defaultSettings is IShaderVariantSettings shaderVariantSettings)
+            if (GraphicsSettings.TryGetRenderPipelineSettings<ShaderStrippingSetting>(out var shaderVariantSettings))
             {
                 m_IsLogEnabled = shaderVariantSettings.shaderVariantLogLevel != ShaderVariantLogLevel.Disabled;
             }
@@ -358,13 +345,41 @@ namespace UnityEditor.Rendering
         void DumpReport();
     }
 
-    static class ShaderStripping
+    internal static class ShaderStripping
     {
-        private static IShaderStrippingReport m_Reporter;
-        public static IShaderStrippingReport reporter
+        public static bool s_DefaultExport = false;
+
+        static bool s_ShowWarningDebugShaders = false;
+
+        static IShaderStrippingReport m_Reporter;
+        public static IShaderStrippingReport reporter => m_Reporter ??= new ShaderStrippingReportLogger();
+
+        public static void ReportBegin(bool isDevelopmentBuild = false)
         {
-            get => m_Reporter ??= new ShaderStrippingReportLogger();
-            internal set => m_Reporter = value;
+            ShaderVariantLogLevel logStrippedVariants = ShaderVariantLogLevel.Disabled;
+            bool exportStrippedVariants = s_DefaultExport;
+
+            // Check the current pipeline and check the shader variant settings
+            if (GraphicsSettings.TryGetRenderPipelineSettings<ShaderStrippingSetting>(out var shaderVariantSettings))
+            {
+                logStrippedVariants = shaderVariantSettings.shaderVariantLogLevel;
+                exportStrippedVariants = shaderVariantSettings.exportShaderVariants;
+                s_ShowWarningDebugShaders = shaderVariantSettings.stripRuntimeDebugShaders && isDevelopmentBuild;
+            }
+
+            m_Reporter = (logStrippedVariants == ShaderVariantLogLevel.Disabled && exportStrippedVariants == false) ?
+                new ShaderStrippingReportEmpty() : new ShaderStrippingReport(logStrippedVariants, exportStrippedVariants);
+        }
+
+        public static void ReportEnd()
+        {
+            m_Reporter.DumpReport();
+
+            if (s_ShowWarningDebugShaders)
+                Debug.Log("Stripping Runtime Debug Shader Variants, you won't be able to use some features of Rendering Debugger in the Player Build.");
+
+            m_Reporter = null;
+            s_ShowWarningDebugShaders = false;
         }
     }
 }

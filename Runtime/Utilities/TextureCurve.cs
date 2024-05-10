@@ -51,7 +51,7 @@ namespace UnityEngine.Rendering
         /// Retrieves the key at index.
         /// </summary>
         /// <param name="index">The index to look for.</param>
-        /// <returns>A key.</returns>
+        /// <value>A key.</value>
         public Keyframe this[int index] => m_Curve[index];
 
         /// <summary>
@@ -82,22 +82,20 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Finalizer.
-        /// </summary>
-        ~TextureCurve() { }
-
-        /// <summary>
         /// Cleans up the internal texture resource.
         /// </summary>
-        [Obsolete("Please use Release() instead.")]
-        public void Dispose() { }
+        public void Dispose()
+        {
+            Release();
+        }
 
         /// <summary>
         /// Releases the internal texture resource.
         /// </summary>
         public void Release()
         {
-            CoreUtils.Destroy(m_Texture);
+            if (m_Texture != null)
+                CoreUtils.Destroy(m_Texture);
             m_Texture = null;
         }
 
@@ -114,9 +112,11 @@ namespace UnityEngine.Rendering
 
         static GraphicsFormat GetTextureFormat()
         {
-            if (SystemInfo.IsFormatSupported(GraphicsFormat.R16_SFloat, FormatUsage.Sample | FormatUsage.SetPixels))
+            // UUM-41070: We require `Sample | SetPixels` but with the deprecated FormatUsage this was checking `SetPixels`
+            // For now, we keep checking for `SetPixels` until the performance hit of doing the correct checks is evaluated
+            if (SystemInfo.IsFormatSupported(GraphicsFormat.R16_SFloat, GraphicsFormatUsage.SetPixels))
                 return GraphicsFormat.R16_SFloat;
-            if (SystemInfo.IsFormatSupported(GraphicsFormat.R8_UNorm, FormatUsage.Sample | FormatUsage.SetPixels))
+            if (SystemInfo.IsFormatSupported(GraphicsFormat.R8_UNorm, GraphicsFormatUsage.SetPixels))
                 return GraphicsFormat.R8_UNorm;
 
             return GraphicsFormat.R8G8B8A8_UNorm;
@@ -208,8 +208,8 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Removes the keyframe at <paramref name="index"/> and inserts <paramref name="key"/>.
         /// </summary>
-        /// <param name="index"></param>
-        /// <param name="key"></param>
+        /// <param name="index">The index of the keyframe to replace.</param>
+        /// <param name="key">The new keyframe to insert at the specified index.</param>
         /// <returns>The index of the keyframe after moving it.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int MoveKey(int index, in Keyframe key)

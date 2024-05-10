@@ -6,18 +6,17 @@ namespace UnityEngine.Rendering
     /// <summary>
     /// A generic Volume component holding a <see cref="VolumeProfile"/>.
     /// </summary>
-    [CoreRPHelpURL("Volumes", "com.unity.render-pipelines.high-definition")]
+    [CurrentPipelineHelpURL("Volumes")]
     [ExecuteAlways]
     [AddComponentMenu("Miscellaneous/Volume")]
     public class Volume : MonoBehaviour, IVolume
     {
         [SerializeField, FormerlySerializedAs("isGlobal")]
-        private bool m_IsGlobal = true;
+        bool m_IsGlobal = true;
 
         /// <summary>
         /// Specifies whether to apply the Volume to the entire Scene or not.
         /// </summary>
-        [Tooltip("When enabled, the Volume is applied to the entire Scene.")]
         public bool isGlobal
         {
             get => m_IsGlobal;
@@ -27,7 +26,6 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// A value which determines which Volume is being used when Volumes have an equal amount of influence on the Scene. Volumes with a higher priority will override lower ones.
         /// </summary>
-        [Tooltip("A value which determines which Volume is being used when Volumes have an equal amount of influence on the Scene. Volumes with a higher priority will override lower ones.")]
         [Delayed]
         public float priority = 0f;
 
@@ -35,13 +33,12 @@ namespace UnityEngine.Rendering
         /// The outer distance to start blending from. A value of 0 means no blending and Unity applies
         /// the Volume overrides immediately upon entry.
         /// </summary>
-        [Tooltip("Sets the outer distance to start blending from. A value of 0 means no blending and Unity applies the Volume overrides immediately upon entry.")]
         public float blendDistance = 0f;
 
         /// <summary>
         /// The total weight of this volume in the Scene. 0 means no effect and 1 means full effect.
         /// </summary>
-        [Range(0f, 1f), Tooltip("Sets the total weight of this Volume in the Scene. 0 means no effect and 1 means full effect.")]
+        [Range(0f, 1f)]
         public float weight = 1f;
 
         /// <summary>
@@ -119,7 +116,6 @@ namespace UnityEngine.Rendering
         {
             m_PreviousLayer = gameObject.layer;
             VolumeManager.instance.Register(this, m_PreviousLayer);
-
             GetComponents(m_Colliders);
         }
 
@@ -160,6 +156,11 @@ namespace UnityEngine.Rendering
                 VolumeManager.instance.UpdateVolumeLayer(this, m_PreviousLayer, layer);
                 m_PreviousLayer = layer;
             }
+        }
+
+        void OnValidate()
+        {
+            blendDistance = Mathf.Max(blendDistance, 0f);
         }
     }
 }

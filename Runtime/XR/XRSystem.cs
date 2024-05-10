@@ -9,6 +9,17 @@ using UnityEngine.XR;
 namespace UnityEngine.Experimental.Rendering
 {
     /// <summary>
+    /// Used by render pipelines to control the active XR shader variant.
+    /// </summary>
+    public static class SinglepassKeywords
+    {
+        /// <summary> XR shader keyword used by multiview rendering </summary>
+        public static GlobalKeyword STEREO_MULTIVIEW_ON;
+        /// <summary> XR shader keywordused by single pass instanced rendering </summary>
+        public static GlobalKeyword STEREO_INSTANCING_ON;
+    }
+
+    /// <summary>
     /// Used by render pipelines to communicate with XR SDK.
     /// </summary>
     public static class XRSystem
@@ -35,6 +46,11 @@ namespace UnityEngine.Experimental.Rendering
         // MSAA level (number of samples per pixel) shared by all XR displays
         static MSAASamples s_MSAASamples = MSAASamples.None;
 
+#if ENABLE_VR && ENABLE_XR_MODULE
+        // Occlusion Mesh scaling factor
+        static float s_OcclusionMeshScaling = 1.0f;
+#endif
+
         // Internal resources used by XR rendering
         static Material s_OcclusionMeshMaterial;
         static Material s_MirrorViewMaterial;
@@ -49,6 +65,18 @@ namespace UnityEngine.Experimental.Rendering
         {
 #if ENABLE_VR && ENABLE_XR_MODULE
             get => (s_Display != null) ? s_Display.running : false;
+#else
+            get => false;
+#endif
+        }
+
+        /// <summary>
+        /// Returns if the XR display is running in HDR mode.
+        /// </summary>
+        static public bool isHDRDisplayOutputActive
+        {
+#if ENABLE_VR && ENABLE_XR_MODULE
+            get => s_Display?.hdrOutputSettings?.active ?? false;
 #else
             get => false;
 #endif
@@ -77,9 +105,9 @@ namespace UnityEngine.Experimental.Rendering
         /// <summary>
         /// Use this method to assign the shaders that will be used to render occlusion mesh for each XRPass and the final mirror view.
         /// </summary>
-        /// <param name="passAllocator"></param>
-        /// <param name="occlusionMeshPS"></param>
-        /// <param name="mirrorViewPS"></param>
+        /// <param name="passAllocator"> Delegate funcion used to allocate XRPasses. </param>
+        /// <param name="occlusionMeshPS"> Fragement shader used for rendering occlusion mesh. </param>
+        /// <param name="mirrorViewPS"> Fragement shader used for rendering mirror view. </param>
         public static void Initialize(Func<XRPassCreateInfo, XRPass> passAllocator, Shader occlusionMeshPS, Shader mirrorViewPS)
         {
             if (passAllocator == null)
@@ -99,12 +127,15 @@ namespace UnityEngine.Experimental.Rendering
 
             if (XRGraphicsAutomatedTests.enabled)
                 SetLayoutOverride(XRGraphicsAutomatedTests.OverrideLayout);
+
+            SinglepassKeywords.STEREO_MULTIVIEW_ON = GlobalKeyword.Create("STEREO_MULTIVIEW_ON");
+            SinglepassKeywords.STEREO_INSTANCING_ON = GlobalKeyword.Create("STEREO_INSTANCING_ON");
         }
 
         /// <summary>
         /// Used by the render pipeline to communicate to the XR device how many samples are used by MSAA.
         /// </summary>
-        /// <param name="msaaSamples"></param>
+        /// <param name="msaaSamples"> The active msaa samples the XRDisplay to set to. The eye texture surfaces are reallocated when necessary to work with the active msaa samples. </param>
         public static void SetDisplayMSAASamples(MSAASamples msaaSamples)
         {
             if (s_MSAASamples == msaaSamples)
@@ -113,7 +144,7 @@ namespace UnityEngine.Experimental.Rendering
             s_MSAASamples = msaaSamples;
 
 #if ENABLE_VR && ENABLE_XR_MODULE
-            SubsystemManager.GetInstances(s_DisplayList);
+            SubsystemManager.GetSubsystems(s_DisplayList);
 
             foreach (var display in s_DisplayList)
                 display.SetMSAALevel((int)s_MSAASamples);
@@ -123,10 +154,62 @@ namespace UnityEngine.Experimental.Rendering
         /// <summary>
         /// Returns the number of samples (MSAA) currently configured on the XR device.
         /// </summary>
-        /// <returns></returns>
+        /// <returns> Returns current active msaa samples. </returns>
         public static MSAASamples GetDisplayMSAASamples()
         {
             return s_MSAASamples;
+        }
+
+        /// <summary>
+        /// Used by the render pipeline to scale all occlusion meshes used by all XRPasses.
+        /// </summary>
+        /// <param name="occlusionMeshScale">A value of 1.0f represents 100% of the original mesh size. A value less or equal to 0.0f disables occlusion mesh draw. </param>
+        internal static void SetOcclusionMeshScale(float occlusionMeshScale)
+        {
+#if ENABLE_VR && ENABLE_XR_MODULE
+            s_OcclusionMeshScaling = occlusionMeshScale;
+#endif
+        }
+
+        /// <summary>
+        /// Returned value used by the render pipeline to scale all occlusion meshes used by all XRPasses.
+        /// </summary>
+        internal static float GetOcclusionMeshScale()
+        {
+#if ENABLE_VR && ENABLE_XR_MODULE
+            return s_OcclusionMeshScaling;
+#else
+            return 1.0f;
+#endif
+        }
+
+        /// <summary>
+        /// Used to communicate to the XR device how to render the XR MirrorView. Note: not all blit modes are supported by all providers. Blitmode set here serves as preference purpose.
+        /// </summary>
+        /// <param name="mirrorBlitMode"> Mirror view mode to be set as preferred. See `XRMirrorViewBlitMode` for the builtin blit modes. </param>
+        internal static void SetMirrorViewMode(int mirrorBlitMode)
+        {
+#if ENABLE_VR && ENABLE_XR_MODULE
+            if (s_Display == null)
+                return;
+
+            s_Display.SetPreferredMirrorBlitMode(mirrorBlitMode);
+#endif
+        }
+
+        /// <summary>
+        /// Get current blit modes preferred by XRDisplay
+        /// </summary>
+        internal static int GetMirrorViewMode()
+        {
+#if ENABLE_VR && ENABLE_XR_MODULE
+            if (s_Display == null)
+                return XRMirrorViewBlitMode.None;
+
+            return s_Display.GetPreferredMirrorBlitMode();
+#else
+            return 0;
+#endif
         }
 
         /// <summary>
@@ -136,7 +219,7 @@ namespace UnityEngine.Experimental.Rendering
         public static void SetRenderScale(float renderScale)
         {
 #if ENABLE_VR && ENABLE_XR_MODULE
-            SubsystemManager.GetInstances(s_DisplayList);
+            SubsystemManager.GetSubsystems(s_DisplayList);
 
             foreach (var display in s_DisplayList)
                 display.scaleOfAllRenderTargets = renderScale;
@@ -146,7 +229,7 @@ namespace UnityEngine.Experimental.Rendering
         /// <summary>
         /// Used by the render pipeline to initiate a new rendering frame through a XR layout.
         /// </summary>
-        /// <returns></returns>
+        /// <returns> Returns a new default layout. </returns>
         public static XRLayout NewLayout()
         {
             RefreshDeviceInfo();
@@ -174,8 +257,8 @@ namespace UnityEngine.Experimental.Rendering
         /// <summary>
         /// Used by the render pipeline to render the mirror view to the gameview, as configured by the XR device.
         /// </summary>
-        /// <param name="cmd"></param>
-        /// <param name="camera"></param>
+        /// <param name="cmd"> CommandBuffer on which to perform the mirror view draw. </param>
+        /// <param name="camera"> Camera that has XR device connected to. The connected XR device determines how to perform the mirror view draw. </param>
         public static void RenderMirrorView(CommandBuffer cmd, Camera camera)
         {
 #if ENABLE_VR && ENABLE_XR_MODULE
@@ -232,7 +315,7 @@ namespace UnityEngine.Experimental.Rendering
         static void RefreshDeviceInfo()
         {
 #if ENABLE_VR && ENABLE_XR_MODULE
-            SubsystemManager.GetInstances(s_DisplayList);
+            SubsystemManager.GetSubsystems(s_DisplayList);
 
             if (s_DisplayList.Count > 0)
             {
@@ -379,6 +462,7 @@ namespace UnityEngine.Experimental.Rendering
                 renderTargetDesc        = rtDesc,
                 cullingParameters       = cullingParameters,
                 occlusionMeshMaterial   = s_OcclusionMeshMaterial,
+                occlusionMeshScale      = GetOcclusionMeshScale(),
                 foveatedRenderingInfo   = xrRenderPass.foveatedRenderingInfo,
                 multipassId             = s_Layout.GetActivePasses().Count,
                 cullingPassId           = xrRenderPass.cullingPassIndex,

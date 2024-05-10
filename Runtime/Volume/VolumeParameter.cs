@@ -34,7 +34,8 @@ namespace UnityEngine.Rendering
 
         /// <summary>
         /// The current override state for this parameter. The Volume system considers overriden parameters
-        /// for blending, and ignores non-overriden ones.
+        /// for blending, and ignores non-overriden ones. It is also used in the VolumeStack to determine whether
+        /// a given parameter has been overridden and thus needs to be reset to its default state in the next update.
         /// </summary>
         /// <remarks>
         /// You can override this property to define custom behaviors when the override state
@@ -131,7 +132,7 @@ namespace UnityEngine.Rendering
     /// class.
     /// </remarks>
     /// <example>
-    /// This sample code shows how to make a custom parameter holding a <c>float</c>:
+    /// <para>This sample code shows how to make a custom parameter holding a <c>float</c>:</para>
     /// <code>
     /// using UnityEngine.Rendering;
     ///
@@ -183,7 +184,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
-        protected VolumeParameter(T value, bool overrideState)
+        protected VolumeParameter(T value, bool overrideState = false)
         {
             m_Value = value;
             this.overrideState = overrideState;
@@ -322,15 +323,21 @@ namespace UnityEngine.Rendering
         public static explicit operator T(VolumeParameter<T> prop) => prop.m_Value;
     }
 
-    //
-    // The serialization system in Unity can't serialize generic types, the workaround is to extend
-    // and flatten pre-defined generic types.
-    // For enums it's recommended to make your own types on the spot, like so:
-    //
-    //  [Serializable]
-    //  public sealed class MyEnumParameter : VolumeParameter<MyEnum> { }
-    //  public enum MyEnum { One, Two }
-    //
+    /// <summary>
+    /// Generic Enum volume parameter.
+    /// </summary>
+    /// <typeparam name="T">The type of value to hold in this parameter.</typeparam>
+    [Serializable, DebuggerDisplay(k_DebuggerDisplay)]
+    public sealed class EnumParameter<T> : VolumeParameter<T>
+    {
+        /// <summary>
+        /// Creates a new <see cref="EnumParameter"/> instance.
+        /// </summary>
+        /// <param name="value">The initial value to store in the parameter.</param>
+        /// <param name="overrideState">The initial override state for the parameter.</param>
+        public EnumParameter(T value, bool overrideState = false)
+            : base(value, overrideState) { }
+    }
 
     /// <summary>
     /// A <see cref="VolumeParameter"/> that holds a <c>bool</c> value.
@@ -752,7 +759,7 @@ namespace UnityEngine.Rendering
     public class FloatParameter : VolumeParameter<float>
     {
         /// <summary>
-        /// Creates a new <seealso cref="FloatParameter"/> instance.
+        /// Creates a new <see cref="FloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter</param>
         /// <param name="overrideState">The initial override state for the parameter</param>
@@ -787,7 +794,7 @@ namespace UnityEngine.Rendering
     public class NoInterpFloatParameter : VolumeParameter<float>
     {
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpFloatParameter"/> instance.
+        /// Creates a new <see cref="NoInterpFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -829,7 +836,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="MinFloatParameter"/> instance.
+        /// Creates a new <see cref="MinFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="min">The minimum value to clamp the parameter to.</param>
@@ -876,7 +883,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpMinFloatParameter"/> instance.
+        /// Creates a new <see cref="NoInterpMinFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to storedin the parameter.</param>
         /// <param name="min">The minimum value to clamp the parameter to.</param>
@@ -922,7 +929,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="MaxFloatParameter"/> instance.
+        /// Creates a new <see cref="MaxFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="max">The maximum value to clamp the parameter to.</param>
@@ -969,7 +976,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpMaxFloatParameter"/> instance.
+        /// Creates a new <see cref="NoInterpMaxFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="max">The maximum value to clamp the parameter to.</param>
@@ -1022,7 +1029,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="ClampedFloatParameter"/> instance.
+        /// Creates a new <see cref="ClampedFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="min">The minimum value to clamp the parameter to</param>
@@ -1077,7 +1084,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpClampedFloatParameter"/> instance.
+        /// Creates a new <see cref="NoInterpClampedFloatParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="min">The minimum value to clamp the parameter to</param>
@@ -1136,7 +1143,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="FloatRangeParameter"/> instance.
+        /// Creates a new <see cref="FloatRangeParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="min">The minimum value to clamp the parameter to</param>
@@ -1207,7 +1214,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpFloatRangeParameter"/> instance.
+        /// Creates a new <see cref="NoInterpFloatRangeParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="min">The minimum value to clamp the parameter to</param>
@@ -1247,7 +1254,7 @@ namespace UnityEngine.Rendering
         public bool showEyeDropper = true;
 
         /// <summary>
-        /// Creates a new <seealso cref="ColorParameter"/> instance.
+        /// Creates a new <see cref="ColorParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1255,7 +1262,7 @@ namespace UnityEngine.Rendering
             : base(value, overrideState) { }
 
         /// <summary>
-        /// Creates a new <seealso cref="ColorParameter"/> instance.
+        /// Creates a new <see cref="ColorParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="hdr">Specifies whether the color is HDR or not.</param>
@@ -1318,7 +1325,7 @@ namespace UnityEngine.Rendering
         public bool showEyeDropper = true;
 
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpColorParameter"/> instance.
+        /// Creates a new <see cref="NoInterpColorParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1326,7 +1333,7 @@ namespace UnityEngine.Rendering
             : base(value, overrideState) { }
 
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpColorParameter"/> instance.
+        /// Creates a new <see cref="NoInterpColorParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="hdr">Specifies whether the color is HDR or not.</param>
@@ -1351,7 +1358,7 @@ namespace UnityEngine.Rendering
     public class Vector2Parameter : VolumeParameter<Vector2>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Vector2Parameter"/> instance.
+        /// Creates a new <see cref="Vector2Parameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1379,7 +1386,7 @@ namespace UnityEngine.Rendering
     public class NoInterpVector2Parameter : VolumeParameter<Vector2>
     {
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpVector2Parameter"/> instance.
+        /// Creates a new <see cref="NoInterpVector2Parameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1395,7 +1402,7 @@ namespace UnityEngine.Rendering
     public class Vector3Parameter : VolumeParameter<Vector3>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Vector3Parameter"/> instance.
+        /// Creates a new <see cref="Vector3Parameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1424,7 +1431,7 @@ namespace UnityEngine.Rendering
     public class NoInterpVector3Parameter : VolumeParameter<Vector3>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Vector3Parameter"/> instance.
+        /// Creates a new <see cref="Vector3Parameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1440,7 +1447,7 @@ namespace UnityEngine.Rendering
     public class Vector4Parameter : VolumeParameter<Vector4>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Vector4Parameter"/> instance.
+        /// Creates a new <see cref="Vector4Parameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1470,7 +1477,7 @@ namespace UnityEngine.Rendering
     public class NoInterpVector4Parameter : VolumeParameter<Vector4>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Vector4Parameter"/> instance.
+        /// Creates a new <see cref="Vector4Parameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1490,7 +1497,7 @@ namespace UnityEngine.Rendering
         public TextureDimension dimension;
 
         /// <summary>
-        /// Creates a new <seealso cref="TextureParameter"/> instance.
+        /// Creates a new <see cref="TextureParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1498,7 +1505,7 @@ namespace UnityEngine.Rendering
             : this(value, TextureDimension.Any, overrideState) { }
 
         /// <summary>
-        /// Creates a new <seealso cref="TextureParameter"/> instance.
+        /// Creates a new <see cref="TextureParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="dimension">The accepted dimension of textures.</param>
@@ -1536,7 +1543,7 @@ namespace UnityEngine.Rendering
     public class NoInterpTextureParameter : VolumeParameter<Texture>
     {
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpTextureParameter"/> instance.
+        /// Creates a new <see cref="NoInterpTextureParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1568,7 +1575,7 @@ namespace UnityEngine.Rendering
     public class Texture2DParameter : VolumeParameter<Texture>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Texture2DParameter"/> instance.
+        /// Creates a new <see cref="Texture2DParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1600,7 +1607,7 @@ namespace UnityEngine.Rendering
     public class Texture3DParameter : VolumeParameter<Texture>
     {
         /// <summary>
-        /// Creates a new <seealso cref="Texture3DParameter"/> instance.
+        /// Creates a new <see cref="Texture3DParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1632,7 +1639,7 @@ namespace UnityEngine.Rendering
     public class RenderTextureParameter : VolumeParameter<RenderTexture>
     {
         /// <summary>
-        /// Creates a new <seealso cref="RenderTextureParameter"/> instance.
+        /// Creates a new <see cref="RenderTextureParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1666,7 +1673,7 @@ namespace UnityEngine.Rendering
     public class NoInterpRenderTextureParameter : VolumeParameter<RenderTexture>
     {
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpRenderTextureParameter"/> instance.
+        /// Creates a new <see cref="NoInterpRenderTextureParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1698,7 +1705,7 @@ namespace UnityEngine.Rendering
     public class CubemapParameter : VolumeParameter<Texture>
     {
         /// <summary>
-        /// Creates a new <seealso cref="CubemapParameter"/> instance.
+        /// Creates a new <see cref="CubemapParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1731,7 +1738,7 @@ namespace UnityEngine.Rendering
     public class NoInterpCubemapParameter : VolumeParameter<Cubemap>
     {
         /// <summary>
-        /// Creates a new <seealso cref="NoInterpCubemapParameter"/> instance.
+        /// Creates a new <see cref="NoInterpCubemapParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
@@ -1805,7 +1812,7 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Creates a new <seealso cref="ObjectParameter{T}"/> instance.
+        /// Creates a new <see cref="ObjectParameter{T}"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         public ObjectParameter(T value)
@@ -1841,7 +1848,7 @@ namespace UnityEngine.Rendering
     public class AnimationCurveParameter : VolumeParameter<AnimationCurve>
     {
         /// <summary>
-        /// Creates a new <seealso cref="AnimationCurveParameter"/> instance.
+        /// Creates a new <see cref="AnimationCurveParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to be stored in the parameter</param>
         /// <param name="overrideState">The initial override state for the parameter</param>
@@ -1875,10 +1882,24 @@ namespace UnityEngine.Rendering
         {
             return new AnimationCurveParameter(new AnimationCurve(GetValue<AnimationCurve>().keys), overrideState);
         }
+
+        /// <summary>
+        /// Returns a hash code for the animationCurve.
+        /// </summary>
+        /// <returns>A hash code for the animationCurve.</returns>
+        public override int GetHashCode()
+         {
+             unchecked
+             {
+                var hash = overrideState.GetHashCode();
+
+                return hash * 23 + value.GetHashCode();
+             }
+         }
     }
 
     /// <summary>
-    /// A <see cref="VolumeParameter"/> that holds a <c>bool</c> value.
+    /// A <see cref="VolumeParameter"/> that holds a  <see cref="Material"/> value.
     /// </summary>
     [Serializable, DebuggerDisplay(k_DebuggerDisplay)]
     public class MaterialParameter : VolumeParameter<Material>

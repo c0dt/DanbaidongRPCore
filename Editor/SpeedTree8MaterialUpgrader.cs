@@ -30,7 +30,7 @@ namespace UnityEditor.Rendering
             "_WINDQUALITY_BEST",
             "_WINDQUALITY_PALM"
         };
-        
+
         static private class Uniforms
         {
             internal static int _WINDQUALITY = Shader.PropertyToID("_WINDQUALITY");

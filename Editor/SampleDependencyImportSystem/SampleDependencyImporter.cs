@@ -19,7 +19,7 @@ using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 ///         [
 ///             "com.unity.render-pipelines.core/Samples~/CommonMeshes",
 ///             "com.unity.render-pipelines.core/Samples~/CommonTextures",
-///             "com.unity.render-pipelines.universal/Samples~/CommonURPMaterials",
+///             "com.unity.render-pipelines.danbaidong/Samples~/CommonURPMaterials",
 ///             "com.unity.render-pipelines.high-definition/Samples~/CommonHDRPMaterials",
 ///         ]
 /// },

@@ -25,6 +25,14 @@ namespace UnityEngine.Rendering
             cb.SetGlobal(cmd, shaderId);
         }
 
+        public static void PushGlobal<CBType>(ComputeCommandBuffer cmd, in CBType data, int shaderId) where CBType : struct
+        {
+            var cb = ConstantBufferSingleton<CBType>.instance;
+
+            cb.UpdateData(cmd, data);
+            cb.SetGlobal(cmd, shaderId);
+        }
+
         /// <summary>
         /// Update the GPU data of the constant buffer and bind it globally.
         /// </summary>
@@ -258,6 +266,16 @@ namespace UnityEngine.Rendering
 #endif
         }
 
+        public void UpdateData(ComputeCommandBuffer cmd, in CBType data)
+        {
+            m_Data[0] = data;
+#if UNITY_2021_1_OR_NEWER
+            cmd.SetBufferData(m_GPUConstantBuffer, m_Data);
+#else
+            cmd.SetComputeBufferData(m_GPUConstantBuffer, m_Data);
+#endif
+        }
+
         /// <summary>
         /// Update the GPU data of the constant buffer.
         /// </summary>
@@ -274,6 +292,12 @@ namespace UnityEngine.Rendering
         /// <param name="cmd">Command Buffer used to execute the graphic commands.</param>
         /// <param name="shaderId">Shader porperty id to bind the constant buffer to.</param>
         public void SetGlobal(CommandBuffer cmd, int shaderId)
+        {
+            m_GlobalBindings.Add(shaderId);
+            cmd.SetGlobalConstantBuffer(m_GPUConstantBuffer, shaderId, 0, m_GPUConstantBuffer.stride);
+        }
+
+        public void SetGlobal(ComputeCommandBuffer cmd, int shaderId)
         {
             m_GlobalBindings.Add(shaderId);
             cmd.SetGlobalConstantBuffer(m_GPUConstantBuffer, shaderId, 0, m_GPUConstantBuffer.stride);

@@ -63,6 +63,14 @@ namespace UnityEngine.Rendering
             cb.Set(cmd, cs, shaderId);
         }
 
+        public static void Push<CBType>(ComputeCommandBuffer cmd, in CBType data, ComputeShader cs, int shaderId) where CBType : struct
+        {
+            var cb = ConstantBufferSingleton<CBType>.instance;
+
+            cb.UpdateData(cmd, data);
+            cb.Set(cmd, cs, shaderId);
+        }
+
         /// <summary>
         /// Update the GPU data of the constant buffer and bind it to a compute shader.
         /// </summary>
@@ -320,6 +328,11 @@ namespace UnityEngine.Rendering
         /// <param name="cs">Compute shader to which the constant buffer should be bound.</param>
         /// <param name="shaderId">Shader porperty id to bind the constant buffer to.</param>
         public void Set(CommandBuffer cmd, ComputeShader cs, int shaderId)
+        {
+            cmd.SetComputeConstantBufferParam(cs, shaderId, m_GPUConstantBuffer, 0, m_GPUConstantBuffer.stride);
+        }
+
+        public void Set(ComputeCommandBuffer cmd, ComputeShader cs, int shaderId)
         {
             cmd.SetComputeConstantBufferParam(cs, shaderId, m_GPUConstantBuffer, 0, m_GPUConstantBuffer.stride);
         }

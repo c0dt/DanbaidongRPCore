@@ -74,6 +74,23 @@ namespace UnityEngine.Rendering.RenderGraphModule
         /// <summary>
         /// BufferDesc constructor.
         /// </summary>
+        /// <param name="count"></param>
+        /// <param name="stride"></param>
+        /// <param name="name"></param>
+        public BufferDesc(int count, int stride, string name)
+            : this()
+        {
+            this.count = count;
+            this.stride = stride;
+            this.name = name;
+            this.target = GraphicsBuffer.Target.Structured;
+            this.usageFlags = GraphicsBuffer.UsageFlags.None;
+        }
+
+
+        /// <summary>
+        /// BufferDesc constructor.
+        /// </summary>
         /// <param name="count">Number of elements in the buffer.</param>
         /// <param name="stride">Size of one element in the buffer.</param>
         /// <param name="target">Type of the buffer.</param>

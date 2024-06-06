@@ -15,6 +15,8 @@ namespace UnityEditor.Rendering
             public static readonly GUIContent shapeHeader = EditorGUIUtility.TrTextContent("Shape");
             /// <summary>Title with "Rendering"</summary>
             public static readonly GUIContent renderingHeader = EditorGUIUtility.TrTextContent("Rendering");
+            /// <summary>Title with "Contribution"</summary>
+            public static readonly GUIContent contributionsHeader = EditorGUIUtility.TrTextContent("Contribution");
             /// <summary>Title with "Emission"</summary>
             public static readonly GUIContent emissionHeader = EditorGUIUtility.TrTextContent("Emission");
             /// <summary>Title with "Shadows"</summary>

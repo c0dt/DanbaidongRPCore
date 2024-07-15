@@ -1499,6 +1499,13 @@ real UnpackHeightmap(real4 height)
 // Misc utilities
 // ----------------------------------------------------------------------------
 
+// Use sigmoid to sharp smooth values.
+float SigmoidSharp(float x, float center, float sharp) {
+    float s;
+    s = 1.0 / (1.0 + pow(100000.0, (-3.0 * sharp * (x - center))));
+    return s;
+};
+
 // Simple function to test a bitfield
 bool HasFlag(uint bitfield, uint flag)
 {

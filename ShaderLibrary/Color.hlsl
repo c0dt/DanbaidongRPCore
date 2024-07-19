@@ -711,12 +711,13 @@ float3 AcesTonemap(float3 aces)
 }
 
 // AcesFilm GranTurismoTonemap add by houdong 20230909
+// Modify AcesFilm to match genshin mobile tomemap.
 float3 AcesFilm(float3 x)
 {
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
+    float a = 1.36f;
+    float b = 0.046999998f;
+    float c = 0.93000001f;
+    float d = 0.56f;
     float e = 0.14f;
     return saturate((x*(a*x+b))/(x*(c*x+d)+e));
 }

@@ -49,4 +49,62 @@ float2 ParallaxMappingChannel(TEXTURE2D_PARAM(heightMap, sampler_heightMap), hal
     float2 offset = ParallaxOffset1Step(h, scale, viewDirTS);
     return offset;
 }
+
+float2 SecantMethodReliefMapping(TEXTURE2D_PARAM(heightMap, sampler_heightMap), float2 inddx, float2 inddy, int channel, float2 uv, float3 viewDirTS, float2 offsetScale, float slicesMin, float slicesMax)
+{
+    // The number of slices depends on VdotN (view angle smaller, slices smaller).
+    int slicesNum = ceil(lerp(slicesMax, slicesMin, abs(dot(float3(0, 0, 1), viewDirTS))));
+    float deltaHeight = 1.0 * rcp(slicesNum);
+    float2 deltaUV = offsetScale.y * viewDirTS.xy * rcp(viewDirTS.z * slicesNum);
+    
+    float prevHeight = SAMPLE_TEXTURE2D_GRAD(heightMap, sampler_heightMap, uv, inddx, inddy)[channel];
+    float2 currUVOffset = -deltaUV;
+    float currHeight = SAMPLE_TEXTURE2D_GRAD(heightMap, sampler_heightMap, uv + currUVOffset, inddx, inddy)[channel];
+    float rayHeight = 1.0 - deltaHeight;
+    
+    // Linear search
+    for (int sliceIndex = 0; sliceIndex < slicesNum; sliceIndex++)
+    {
+        if (currHeight > rayHeight)
+            break;
+        prevHeight = currHeight;
+        rayHeight -= deltaHeight;
+        currUVOffset -= deltaUV;
+        currHeight = SAMPLE_TEXTURE2D_GRAD(heightMap, sampler_heightMap, uv + currUVOffset, inddx, inddy)[channel];
+    }
+    float pt0 = rayHeight + deltaHeight;
+    float pt1 = rayHeight;
+    float delta0 = pt0 - prevHeight;
+    float delta1 = pt1 - currHeight;
+    float delta;
+    float2 offset;
+    // Secant method to affine the search
+    // Ref: Faster Relief Mapping Using the Secant Method - Eric Risser
+    for (int i = 0; i < 3; ++i)
+    {
+        // intersectionHeight is the height [0..1] for the intersection between view ray and heightfield line
+        float intersectionHeight = (pt0 * delta1 - pt1 * delta0) / (delta1 - delta0);
+        // Retrieve offset require to find this intersectionHeight
+        currUVOffset = -(1 - intersectionHeight) * deltaUV * slicesNum;
+        currHeight = SAMPLE_TEXTURE2D_GRAD(heightMap, sampler_heightMap, uv + currUVOffset, inddx, inddy)[channel];
+        delta = intersectionHeight - currHeight;
+        if (abs(delta) <= 0.01)
+            break;
+        // intersectionHeight < currHeight => new lower bounds
+        if (delta < 0.0)
+        {
+            delta1 = delta;
+            pt1 = intersectionHeight;
+        }
+        else
+        {
+            delta0 = delta;
+            pt0 = intersectionHeight;
+        }
+    }
+    
+    float2 parallaxUV = uv + currUVOffset;
+    return parallaxUV;
+}
+
 #endif // UNIVERSAL_PARALLAX_MAPPING_INCLUDED

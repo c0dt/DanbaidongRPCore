@@ -91,7 +91,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 m_CurrentRegistry = value;
             }
         }
-
+        
+        delegate bool ResourceCreateCallback(InternalRenderGraphContext rgContext, IRenderGraphResource res);
         delegate void ResourceCallback(InternalRenderGraphContext rgContext, IRenderGraphResource res);
 
         class RenderGraphResourcesData
@@ -99,7 +100,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             public DynamicArray<IRenderGraphResource> resourceArray = new DynamicArray<IRenderGraphResource>();
             public int sharedResourcesCount;
             public IRenderGraphResourcePool pool;
-            public ResourceCallback createResourceCallback;
+            public ResourceCreateCallback createResourceCallback;
             public ResourceCallback releaseResourceCallback;
 
             public RenderGraphResourcesData()
@@ -229,10 +230,10 @@ namespace UnityEngine.Rendering.RenderGraphModule
         }
 
         [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
-        void CheckBufferResource(BufferResource bufferResoruce)
+        void CheckBufferResource(BufferResource bufferResource)
         {
-            if (bufferResoruce.graphicsResource == null)
-                throw new InvalidOperationException("Trying to use a graphics buffer ({bufferResource.GetName()}) that was already released or not yet created. Make sure you declare it for reading in your pass or you don't read it before it's been written to at least once.");
+            if (bufferResource.graphicsResource == null)
+                throw new InvalidOperationException($"Trying to use a graphics buffer ({bufferResource.GetName()}) that was already released or not yet created. Make sure you declare it for reading in your pass or you don't read it before it's been written to at least once.");
         }
 
         internal GraphicsBuffer GetBuffer(in BufferHandle handle)
@@ -265,7 +266,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             var resource = accelStructureResource.graphicsResource;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (resource == null)
-                throw new InvalidOperationException("Trying to use a acceleration structure ({accelStructureResource.GetName()}) that was already released or not yet created. Make sure you declare it for reading in your pass or you don't read it before it's been written to at least once.");
+                throw new InvalidOperationException($"Trying to use a acceleration structure ({accelStructureResource.GetName()}) that was already released or not yet created. Make sure you declare it for reading in your pass or you don't read it before it's been written to at least once.");
 #endif
 
             return resource;
@@ -543,12 +544,12 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     // Store the info in the descriptor structure to avoid having a separate info structure being saved per resource
                     // This descriptor will then be used to reconstruct the info (see GetRenderTargetInfo) but is not a full featured descriptor.
                     // This is ok as this descriptor will never be used to create textures (as they are imported into the graph and thus externally created).
+                                       
+                    texResource.desc.format = info.format;
                     texResource.desc.width = info.width;
                     texResource.desc.height = info.height;
                     texResource.desc.slices = info.volumeDepth;
-
-                    texResource.desc.msaaSamples = (MSAASamples)info.msaaSamples;
-                    texResource.desc.colorFormat = info.format;
+                    texResource.desc.msaaSamples = (MSAASamples)info.msaaSamples;                   
                     texResource.desc.bindTextureMS = info.bindMS;
                     texResource.desc.clearBuffer = importParams.clearOnFirstUse;
                     texResource.desc.clearColor = importParams.clearColor;
@@ -664,7 +665,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             texResource.desc.slices = info.volumeDepth;
             texResource.desc.msaaSamples = (MSAASamples)info.msaaSamples;
             texResource.desc.bindTextureMS = info.bindMS;
-            texResource.desc.colorFormat = info.format;
+            texResource.desc.format = info.format;
             texResource.desc.clearBuffer = importParams.clearOnFirstUse;
             texResource.desc.clearColor = importParams.clearColor;
             texResource.desc.discardBuffer = importParams.discardOnLastUse;
@@ -720,8 +721,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     outInfo.width = handle.m_RT.width;
                     outInfo.height = handle.m_RT.height;
                     outInfo.volumeDepth = handle.m_RT.volumeDepth;
-                    // If it's depth only, graphics format is null but depthStencilFormat is the real format
-                    outInfo.format = (handle.m_RT.graphicsFormat != GraphicsFormat.None) ? handle.m_RT.graphicsFormat : handle.m_RT.depthStencilFormat;
+                    outInfo.format = GetFormat(handle.m_RT.graphicsFormat, handle.m_RT.depthStencilFormat);
                     outInfo.msaaSamples = handle.m_RT.antiAliasing;
                     outInfo.bindMS = handle.m_RT.bindTextureMS;
                 }
@@ -734,8 +734,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     if (handle.m_ExternalTexture is RenderTexture)
                     {
                         RenderTexture rt = (RenderTexture)handle.m_ExternalTexture;
-                        // If it's depth only, graphics format is null but depthStencilFormat is the real format
-                        outInfo.format = (rt.graphicsFormat != GraphicsFormat.None) ? rt.graphicsFormat : rt.depthStencilFormat;
+                        outInfo.format = GetFormat(rt.graphicsFormat, rt.depthStencilFormat);
                         outInfo.msaaSamples = rt.antiAliasing;
                     }
                     else
@@ -757,7 +756,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     var desc = GetTextureResourceDesc(res, true);
                     outInfo = new RenderTargetInfo();
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
-                    if (desc.width == 0 || desc.height == 0 || desc.slices == 0 || desc.msaaSamples == 0 || desc.colorFormat == GraphicsFormat.None)
+                    if (desc.width == 0 || desc.height == 0 || desc.slices == 0 || desc.msaaSamples == 0 || desc.format == GraphicsFormat.None) 
                     {
                         throw new Exception("Invalid imported texture. A RTHandle wrapping an RenderTargetIdentifier was imported without providing valid RenderTargetInfo.");
                     }
@@ -767,7 +766,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     outInfo.volumeDepth = desc.slices;
 
                     outInfo.msaaSamples = (int)desc.msaaSamples;
-                    outInfo.format = desc.colorFormat;
+                    outInfo.format = desc.format;
                     outInfo.bindMS = desc.bindTextureMS;
                 }
                 else
@@ -778,7 +777,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             else
             {
                 // Managed by rendergraph, it might not be created yet so we look at the desc to find out
-                var desc = GetTextureResourceDesc(res, true); // TODO: remove true, we should throw on invalid desc here
+                var desc = GetTextureResourceDesc(res);
                 var dim = desc.CalculateFinalDimensions();
                 outInfo = new RenderTargetInfo();
                 outInfo.width = dim.x;
@@ -787,15 +786,24 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
                 outInfo.msaaSamples = (int)desc.msaaSamples;
                 outInfo.bindMS = desc.bindTextureMS;
+                outInfo.format = desc.format;              
+            }
+        }
 
-                if (desc.isShadowMap || desc.depthBufferBits != DepthBits.None)
+        internal GraphicsFormat GetFormat(GraphicsFormat color, GraphicsFormat depthStencil)
+        {
+            ValidateFormat(color, depthStencil);  
+            return (depthStencil != GraphicsFormat.None) ? depthStencil : color;
+        }
+
+        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
+        internal void ValidateFormat(GraphicsFormat color, GraphicsFormat depthStencil)
+        {
+            if (RenderGraph.enableValidityChecks)
+            {
+                if (color != GraphicsFormat.None && depthStencil != GraphicsFormat.None)
                 {
-                    var format = desc.isShadowMap ? DefaultFormat.Shadow : DefaultFormat.DepthStencil;
-                    outInfo.format = SystemInfo.GetGraphicsFormat(format);
-                }
-                else
-                {
-                    outInfo.format = desc.colorFormat;
+                    throw new Exception("Invalid imported texture. Both a color and a depthStencil format are provided. The texture needs to either have a color format or a depth stencil format.");
                 }
             }
         }
@@ -1012,10 +1020,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
         }
 
-        internal void CreatePooledResource(InternalRenderGraphContext rgContext, int type, int index)
+        internal bool CreatePooledResource(InternalRenderGraphContext rgContext, int type, int index)
         {
             Debug.Assert(index != 0, "Index 0 indicates the null object it can't be used here");
 
+            bool? executedWork = false;
             var resource = m_RenderGraphResources[type].resourceArray[index];
             if (!resource.imported)
             {
@@ -1024,20 +1033,22 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 if (m_RenderGraphDebug.enableLogging)
                     resource.LogCreation(m_FrameInformationLogger);
 
-                m_RenderGraphResources[type].createResourceCallback?.Invoke(rgContext, resource);
+                executedWork = m_RenderGraphResources[type].createResourceCallback?.Invoke(rgContext, resource);
             }
+
+            return executedWork ?? false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CreatePooledResource(InternalRenderGraphContext rgContext, in ResourceHandle handle)
+        internal bool CreatePooledResource(InternalRenderGraphContext rgContext, in ResourceHandle handle)
         {
-            CreatePooledResource(rgContext, handle.iType, handle.index);
+            return CreatePooledResource(rgContext, handle.iType, handle.index);
         }
 
         // Only modified by native compiler when using native render pass
         internal bool forceManualClearOfResource = true;
 
-        void CreateTextureCallback(InternalRenderGraphContext rgContext, IRenderGraphResource res)
+        bool CreateTextureCallback(InternalRenderGraphContext rgContext, IRenderGraphResource res)
         {
             var resource = res as TextureResource;
 
@@ -1049,13 +1060,16 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
 #endif
 
+            bool executedWork = false;
             if ((forceManualClearOfResource && resource.desc.clearBuffer) || m_RenderGraphDebug.clearRenderTargetsAtCreation)
             {
                 bool debugClear = m_RenderGraphDebug.clearRenderTargetsAtCreation && !resource.desc.clearBuffer;
-                var clearFlag = resource.desc.depthBufferBits != DepthBits.None ? ClearFlag.DepthStencil : ClearFlag.Color;
+                var clearFlag = GraphicsFormatUtility.IsDepthStencilFormat(resource.desc.format) ? ClearFlag.DepthStencil : ClearFlag.Color;
                 var clearColor = debugClear ? Color.magenta : resource.desc.clearColor;
                 CoreUtils.SetRenderTarget(rgContext.cmd, resource.graphicsResource, clearFlag, clearColor);
+                executedWork = true;
             }
+            return executedWork;
         }
 
         internal void ReleasePooledResource(InternalRenderGraphContext rgContext, int type, int index)
@@ -1087,7 +1101,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
             if (m_RenderGraphDebug.clearRenderTargetsAtRelease)
             {
-                var clearFlag = resource.desc.depthBufferBits != DepthBits.None ? ClearFlag.DepthStencil : ClearFlag.Color;
+                var clearFlag = GraphicsFormatUtility.IsDepthStencilFormat(resource.desc.format)? ClearFlag.DepthStencil : ClearFlag.Color;
                 CoreUtils.SetRenderTarget(rgContext.cmd, resource.graphicsResource, clearFlag, Color.magenta);
             }
         }
@@ -1095,14 +1109,14 @@ namespace UnityEngine.Rendering.RenderGraphModule
         [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
         void ValidateTextureDesc(in TextureDesc desc)
         {
-            if(RenderGraph.enableValidityChecks)
+            if (RenderGraph.enableValidityChecks)
             {
-                if (desc.colorFormat == GraphicsFormat.None && desc.depthBufferBits == DepthBits.None)
+                if (desc.format == GraphicsFormat.None )
                 {
-                    throw new ArgumentException("Texture was created with an invalid color format.");
+                    throw new ArgumentException("Texture was created with with no format. The texture needs to either have a color format or a depth stencil format.");
                 }
 
-                if (desc.dimension == TextureDimension.None)
+                if (desc.dimension == TextureDimension.None || desc.dimension == TextureDimension.Any)
                 {
                     throw new ArgumentException("Texture was created with an invalid texture dimension.");
                 }
@@ -1110,6 +1124,21 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 if (desc.slices == 0)
                 {
                     throw new ArgumentException("Texture was created with a slices parameter value of zero.");
+                }
+                else if (desc.slices > 1)
+                {
+                    if (desc.dimension == TextureDimension.Tex2D || desc.dimension == TextureDimension.Cube)
+                    {
+                        if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.OpenGLES3)
+                            throw new ArgumentException("Non-array texture was created with a slices parameter larger than one.");
+                    }
+                }
+
+                // Bind ms textures need to use the ms texture sampling functions so there is no "silent" fallback or interoperability between a "non-ms texture" and an "ms texture which happens to have 1 sample" 
+                // it's either ms with > 1 sample or "normal texture". This is unlike array textures where you can have an array with 1 slice.
+                if ((int)desc.msaaSamples <= 1 && desc.bindTextureMS == true)
+                {
+                    throw new ArgumentException("A single sample texture was created with bindTextureMS.");
                 }
 
                 if (desc.sizeMode == TextureSizeMode.Explicit)

@@ -36,8 +36,10 @@ namespace UnityEditor.Rendering
             internal static readonly GUIContent s_Mode = new GUIContent("Mode", "Choose which type of adjustment to apply to probes covered by this volume.");
             internal static readonly GUIContent s_DilationThreshold = new GUIContent("Dilation Validity Threshold", "Override the Dilation Validity Threshold for probes covered by this Probe Adjustment Volume. Higher values increase the chance of probes being considered invalid.");
             internal static readonly GUIContent virtualOffsetThreshold = new GUIContent("Validity Threshold", "Override the Virtual Offset Validity Threshold for probes covered by this Probe Adjustment Volume. Higher values increase the chance of probes being considered invalid.");
-            internal static readonly GUIContent s_VODirection = new GUIContent("Direction", "Rotate the axis along which probes will be pushed when applying Virtual Offset.");
+            internal static readonly GUIContent s_VODirection = new GUIContent("Rotation", "Rotate the axis along which probes will be pushed when applying Virtual Offset.");
             internal static readonly GUIContent s_VODistance = new GUIContent("Distance", "Determines how far probes are pushed in the direction of the Virtual Offset.");
+            internal static readonly GUIContent renderingLayerMaskOperation = new GUIContent("Operation", "The operation to combine the Rendering Layer Mask set by this adjustment volume with the Rendering Layer Mask of the probes covered by this volume.");
+            internal static readonly GUIContent renderingLayerMask = new GUIContent("Rendering Layer Mask", "Sets the Rendering Layer Mask to be combined with the Rendering Layer Mask of the probes covered by this volume.");
             internal static readonly GUIContent s_PreviewLighting = new GUIContent("Preview Probe Adjustments", "Quickly preview the effect of adjustments on probes covered by this volume.");
 
             internal static readonly GUIContent skyOcclusionSampleCount = new GUIContent("Sample Count", "Controls the number of samples per probe for sky occlusion baking.");
@@ -77,25 +79,6 @@ namespace UnityEditor.Rendering
 
             readonly static ExpandedState<Expandable, ProbeAdjustmentVolume> k_ExpandedState = new ExpandedState<Expandable, ProbeAdjustmentVolume>(Expandable.Volume | Expandable.Adjustments);
             readonly static AdditionalPropertiesState<AdditionalProperties, ProbeAdjustmentVolume> k_AdditionalPropertiesState = new AdditionalPropertiesState<AdditionalProperties, ProbeAdjustmentVolume>(0);
-
-            public static void RegisterEditor(ProbeAdjustmentVolumeEditor editor)
-            {
-                k_AdditionalPropertiesState.RegisterEditor(editor);
-            }
-
-            public static void UnregisterEditor(ProbeAdjustmentVolumeEditor editor)
-            {
-                k_AdditionalPropertiesState.UnregisterEditor(editor);
-            }
-
-            [SetAdditionalPropertiesVisibility]
-            public static void SetAdditionalPropertiesVisibility(bool value)
-            {
-                if (value)
-                    k_AdditionalPropertiesState.ShowAll();
-                else
-                    k_AdditionalPropertiesState.HideAll();
-            }
 
             public static void DrawVolumeContent(SerializedProbeAdjustmentVolume serialized, Editor owner)
             {
@@ -248,6 +231,39 @@ namespace UnityEditor.Rendering
                         });
                     }
                 }
+                else if (serialized.mode.intValue == (int)ProbeAdjustmentVolume.Mode.OverrideRenderingLayerMask)
+                {
+                    if (bakingSet != null && !bakingSet.useRenderingLayers)
+                    {
+                        CoreEditorUtils.DrawFixMeBox("Override Rendering Layer can be used only if Rendering Layers are enabled for the Baking Set.", MessageType.Warning, "Open", () =>
+                        {
+                            ProbeVolumeLightingTab.OpenBakingSet(bakingSet);
+                        });
+                    }
+                    else
+                    {
+                        EditorGUILayout.PropertyField(serialized.renderingLayerMaskOperation, Styles.renderingLayerMaskOperation);
+
+                        string[] options;
+                        if (bakingSet != null)
+                        {
+                            options = new string[bakingSet.renderingLayerMasks.Length];
+                            for (int i = 0; i < bakingSet.renderingLayerMasks.Length; i++)
+                                options[i] = bakingSet.renderingLayerMasks[i].name;
+                        }
+                        else
+                        {
+                            options = new string[APVDefinitions.probeMaxRegionCount];
+                            for (int i = 0; i < APVDefinitions.probeMaxRegionCount; i++)
+                                options[i] = "Mask " + (i + 1);
+                        }
+
+                        EditorGUI.BeginChangeCheck();
+                        int newMask = EditorGUILayout.MaskField(Styles.renderingLayerMask, serialized.renderingLayerMask.intValue, options);
+                        if (EditorGUI.EndChangeCheck())
+                             serialized.renderingLayerMask.uintValue = (uint)newMask;
+                    }
+                }
             }
 
             static void DrawBakingHelpers(SerializedProbeAdjustmentVolume p, Editor owner)
@@ -258,10 +274,11 @@ namespace UnityEditor.Rendering
                 if (owner.targets.Length == 1)
                 {
                     EditorGUILayout.Space();
-                    using (new EditorGUI.DisabledScope(bakingSet == null))
+                    using (new EditorGUI.DisabledScope(Lightmapping.isRunning || bakingSet == null))
                     {
-                        if (GUILayout.Button(Styles.s_PreviewLighting))
-                            AdaptiveProbeVolumes.BakeAdjustmentVolume(bakingSet, ptv);
+                        using (new EditorGUI.DisabledScope(AdaptiveProbeVolumes.isRunning))
+                            if (GUILayout.Button(Styles.s_PreviewLighting))
+                                AdaptiveProbeVolumes.BakeAdjustmentVolume(bakingSet, ptv);
 
                         ProbeVolumeLightingTab.BakeAPVButton();
                     }

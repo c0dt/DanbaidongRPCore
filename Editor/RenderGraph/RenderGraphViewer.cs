@@ -56,6 +56,7 @@ namespace UnityEditor.Rendering
             public const string kResourceIconContainer = "resource-icon-container";
             public const string kResourceIcon = "resource-icon";
             public const string kResourceIconImported = "resource-icon--imported";
+            public const string kResourceIconMultipleUsage = "resource-icon--multiple-usage";
             public const string kResourceIconGlobalDark = "resource-icon--global-dark";
             public const string kResourceIconGlobalLight = "resource-icon--global-light";
             public const string kResourceIconFbfetch = "resource-icon--fbfetch";
@@ -117,6 +118,7 @@ namespace UnityEditor.Rendering
         const string kPassFilterLegacyEditorPrefsKey = "RenderGraphViewer.PassFilterLegacy";
         const string kPassFilterEditorPrefsKey = "RenderGraphViewer.PassFilter";
         const string kResourceFilterEditorPrefsKey = "RenderGraphViewer.ResourceFilter";
+        const string kSelectedExecutionEditorPrefsKey = "RenderGraphViewer.SelectedExecution";
 
         PassFilter m_PassFilter = PassFilter.CulledPasses | PassFilter.RasterPasses | PassFilter.UnsafePasses | PassFilter.ComputePasses;
         PassFilterLegacy m_PassFilterLegacy = PassFilterLegacy.CulledPasses;
@@ -140,7 +142,7 @@ namespace UnityEditor.Rendering
         {
             "",
             L10n.Tr("No Render Graph has been registered. The Render Graph Viewer is only functional when Render Graph API is in use."),
-            L10n.Tr("The selected camera has not rendered anything yet. Interact with the selected camera to display data in the Render Graph Viewer."),
+            L10n.Tr("The selected camera has not rendered anything yet using a Render Graph API. Interact with the selected camera to display data in the Render Graph Viewer. Make sure your current SRP is using the Render Graph API."),
             L10n.Tr("No data to display. Click refresh to capture data."),
             L10n.Tr("Waiting for the selected camera to render. Depending on the camera, you may need to trigger rendering by selecting the Scene or Game view."),
             L10n.Tr("No passes to display. Select a different Pass Filter to display contents."),
@@ -193,13 +195,26 @@ namespace UnityEditor.Rendering
 
         class ResourceRWBlock
         {
+            [Flags]
+            public enum UsageFlags
+            {
+                None = 0,
+                UpdatesGlobalResource = 1 << 0,
+                FramebufferFetch = 1 << 1,
+            }
+
             public VisualElement element;
             public string tooltip;
             public int visibleResourceIndex;
             public bool read;
             public bool write;
-            public bool frameBufferFetch;
-            public bool setGlobalResource;
+            public UsageFlags usage;
+
+            public bool HasMultipleUsageFlags()
+            {
+                // Check if usage is a power of 2, meaning only one bit is set
+                return usage != 0 && (usage & (usage - 1)) != 0;
+            }
         }
 
         class PassElementInfo
@@ -664,7 +679,7 @@ namespace UnityEditor.Rendering
                         foreach (var res in passInfo.resourceBlocks)
                         {
                             if (res.visibleResourceIndex == visibleResourceIndex &&
-                                res.setGlobalResource)
+                                res.usage.HasFlag(ResourceRWBlock.UsageFlags.UpdatesGlobalResource))
                             {
                                 disablePanning = true;
                             }
@@ -810,6 +825,9 @@ namespace UnityEditor.Rendering
 
         void SelectedExecutionChanged(string newExecutionName)
         {
+            if (newExecutionName == selectedExecutionName)
+                return;
+
             selectedExecutionName = newExecutionName;
 
             if (m_CurrentDebugData != null)
@@ -869,8 +887,19 @@ namespace UnityEditor.Rendering
 
             executionDropdownField.choices = choices;
             executionDropdownField.RegisterValueChangedCallback(evt => selectedExecutionName = evt.newValue);
-            executionDropdownField.value = choices[0];
-            SelectedExecutionChanged(choices[0]);
+
+            int selectedIndex = 0;
+            if (EditorPrefs.HasKey(kSelectedExecutionEditorPrefsKey))
+            {
+                string previousSelectedExecution = EditorPrefs.GetString(kSelectedExecutionEditorPrefsKey);
+                int previousSelectedIndex = choices.IndexOf(previousSelectedExecution);
+                if (previousSelectedIndex != -1)
+                    selectedIndex = previousSelectedIndex;
+            }
+
+            // Set value without triggering serialization of the editorpref
+            executionDropdownField.SetValueWithoutNotify(choices[selectedIndex]);
+            SelectedExecutionChanged(choices[selectedIndex]);
         }
 
         void OnPassFilterChanged(ChangeEvent<Enum> evt)
@@ -1047,33 +1076,43 @@ namespace UnityEditor.Rendering
             }
         }
 
-        // internal for tests
-        internal static string ScriptAbsolutePathToRelative(string absolutePath)
+        /// <summary>
+        /// Converts a physical file path (absolute or relative) to an AssetDatabase-compatible asset path.
+        /// If the path does not point to a script under Assets or in a package, the path is returned as-is.
+        /// </summary>
+        /// <param name="physicalPath">The physical file path (absolute or relative) to convert.</param>
+        /// <returns>An AssetDatabase-compatible asset path, or the untransformed string if the physical path
+        /// could not be resolved to an asset path.</returns>
+        /// <remarks>This method is internal for testing purposes only.</remarks>
+        internal static string ScriptPathToAssetPath(string physicalPath)
         {
-            // Get path relative to project root and canonize directory separators
-            var relativePath = FileUtil.GetLogicalPath(absolutePath);
+            // Make sure we have an absolute path with Unity separators, this is necessary for the following checks
+            var absolutePath = System.IO.Path.GetFullPath(physicalPath).Replace(@"\", "/");
 
-            // Project assets start with data path
-            if (relativePath.StartsWith(Application.dataPath, StringComparison.OrdinalIgnoreCase))
-                relativePath = relativePath.Replace(Application.dataPath, "Assets");
+            // Project assets start with data path (in Editor: <project-path>/Assets)
+            if (absolutePath.StartsWith(Application.dataPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var assetPath = absolutePath.Replace(Application.dataPath, "Assets");
+                return assetPath;
+            }
 
-            // Remove starting "./" if present, it breaks LoadAssetAtPath
-            if (relativePath.StartsWith("./"))
-                relativePath = relativePath.Substring(2);
+            // Try to get the logical path mapped to this physical absolute path (for assets in a package)
+            var logicalPath = FileUtil.GetLogicalPath(absolutePath);
+            if (logicalPath != absolutePath)
+            {
+                return logicalPath;
+            }
 
-            // Package cache path doesn't work with LoadAssetAtPath, so convert it to a Packages path
-            if (relativePath.StartsWith("Library/PackageCache/"))
-                relativePath = relativePath.Replace("Library/PackageCache/", "Packages/");
-
-            return relativePath;
+            // Asset path cannot be found - invalid script path
+            return physicalPath;
         }
 
-        UnityEngine.Object FindScriptAssetByAbsolutePath(string absolutePath)
+        UnityEngine.Object FindScriptAssetByScriptPath(string scriptPath)
         {
-            var relativePath = ScriptAbsolutePathToRelative(absolutePath);
-            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(relativePath);
+            var assetPath = ScriptPathToAssetPath(scriptPath);
+            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(assetPath);
             if (asset == null)
-                Debug.LogWarning($"Could not find a script asset to open for file path {absolutePath}");
+                Debug.LogWarning($"Could not find a script asset to open for file path {scriptPath}");
             return asset;
         }
 
@@ -1145,7 +1184,7 @@ namespace UnityEditor.Rendering
             {
                 if (evt.button == 0)
                 {
-                    var scriptAsset = FindScriptAssetByAbsolutePath(pass.scriptInfo.filePath);
+                    var scriptAsset = FindScriptAssetByScriptPath(pass.scriptInfo.filePath);
                     AssetDatabase.OpenAsset(scriptAsset, pass.scriptInfo.line);
                 }
                 evt.StopImmediatePropagation();
@@ -1263,30 +1302,39 @@ namespace UnityEditor.Rendering
                 }
             }
 
-            if (block.frameBufferFetch)
+            string tooltip = string.Empty;
+            if (!string.IsNullOrEmpty(accessType))
+                tooltip += $"<b>{accessType}</b> access to this resource.";
+
+            if (block.usage != ResourceRWBlock.UsageFlags.None)
             {
-                var fbFetchIcon = new VisualElement();
-                fbFetchIcon.AddToClassList(Classes.kResourceIcon);
-                fbFetchIcon.AddToClassList(Classes.kResourceIconFbfetch);
-                block.element.Add(fbFetchIcon);
-            }
-            else if (block.setGlobalResource)
-            {
-                var globalIcon = new VisualElement();
-                globalIcon.AddToClassList(Classes.kResourceIcon);
-                string globalIconAsset = block.read || block.write ? Classes.kResourceIconGlobalLight : Classes.kResourceIconGlobalDark;
-                globalIcon.AddToClassList(globalIconAsset);
-                block.element.Add(globalIcon);
+                string resourceIconClassName = string.Empty;
+
+                if (block.HasMultipleUsageFlags())
+                    resourceIconClassName = Classes.kResourceIconMultipleUsage;
+                else if (block.usage.HasFlag(ResourceRWBlock.UsageFlags.FramebufferFetch))
+                    resourceIconClassName = Classes.kResourceIconFbfetch;
+                else if (block.usage.HasFlag(ResourceRWBlock.UsageFlags.UpdatesGlobalResource))
+                    resourceIconClassName = block.read || block.write ? Classes.kResourceIconGlobalLight : Classes.kResourceIconGlobalDark;
+
+                if (!string.IsNullOrEmpty(resourceIconClassName))
+                {
+                    var usageIcon = new VisualElement();
+                    usageIcon.AddToClassList(Classes.kResourceIcon);
+                    usageIcon.AddToClassList(resourceIconClassName);
+                    block.element.Add(usageIcon);
+                }
+
+                if (tooltip.Length > 0)
+                    tooltip += "<br><br>";
+                tooltip += "Usage details:";
+                if (block.usage.HasFlag(ResourceRWBlock.UsageFlags.FramebufferFetch))
+                    tooltip += "<br>- Read is using <b>framebuffer fetch</b>.";
+                if (block.usage.HasFlag(ResourceRWBlock.UsageFlags.UpdatesGlobalResource))
+                    tooltip += "<br>- Updates a global resource slot.";
             }
 
-            List<string> tooltipMessages = new List<string>(3);
-            if (accessType != null)
-                tooltipMessages.Add($"<b>{accessType}</b> access to this resource.");
-            if (block.frameBufferFetch)
-                tooltipMessages.Add("Read is using <b>framebuffer fetch</b>.");
-            if (block.setGlobalResource)
-                tooltipMessages.Add("Updates global resource.");
-            block.tooltip = string.Join($"{Environment.NewLine}{Environment.NewLine}", tooltipMessages);
+            block.tooltip = tooltip;
             block.element.style.left = offsetPx;
             block.element.AddToClassList(Classes.kResourceDependencyBlock);
         }
@@ -1356,12 +1404,12 @@ namespace UnityEditor.Rendering
                     if (resourceType == RenderGraphResourceType.Texture && pass.nrpInfo != null)
                     {
                         if (pass.nrpInfo.textureFBFetchList.Contains(resourceIndex))
-                            block.frameBufferFetch = true;
+                            block.usage |= ResourceRWBlock.UsageFlags.FramebufferFetch;
                         if (pass.nrpInfo.setGlobals.Contains(resourceIndex))
-                            block.setGlobalResource = true;
+                            block.usage |= ResourceRWBlock.UsageFlags.UpdatesGlobalResource;
                     }
 
-                    if (!block.read && !block.write && !block.frameBufferFetch && !block.setGlobalResource)
+                    if (!block.read && !block.write && block.usage == ResourceRWBlock.UsageFlags.None)
                         continue; // No need to create a visual element
 
                     int offsetPx = visiblePassIndex * kPassWidthPx;
@@ -1438,6 +1486,7 @@ namespace UnityEditor.Rendering
             int numVisiblePasses = visiblePassIndex;
             if (numVisiblePasses == 0)
             {
+                SaveSplitViewFixedPaneHeight();
                 ClearGraphViewerUI();
                 SetEmptyStateMessage(EmptyStateReason.EmptyPassFilterResult);
                 return;
@@ -1481,6 +1530,7 @@ namespace UnityEditor.Rendering
             int numVisibleResources = visibleResourceIndex;
             if (numVisibleResources == 0)
             {
+                SaveSplitViewFixedPaneHeight();
                 ClearGraphViewerUI();
                 SetEmptyStateMessage(EmptyStateReason.EmptyResourceFilterResult);
                 return;
@@ -1546,7 +1596,18 @@ namespace UnityEditor.Rendering
             renderGraphDropdownField.RegisterValueChangedCallback(evt => SelectedRenderGraphChanged(evt.newValue));
 
             var executionDropdownField = rootVisualElement.Q<DropdownField>(Names.kCurrentExecutionDropdown);
-            executionDropdownField.RegisterValueChangedCallback(evt => SelectedExecutionChanged(evt.newValue));
+            executionDropdownField.RegisterValueChangedCallback(evt =>
+            {
+                EditorPrefs.SetString(kSelectedExecutionEditorPrefsKey, evt.newValue);
+                SelectedExecutionChanged(evt.newValue);
+            });
+
+            // After delay, serialize currently selected execution. This avoids an issue where activating a new camera
+            // causes RG Viewer to change the execution just because it was serialized some time in the past.
+            executionDropdownField.schedule.Execute(() =>
+            {
+                EditorPrefs.SetString(kSelectedExecutionEditorPrefsKey, selectedExecutionName);
+            }).ExecuteLater(500);
 
             var passFilter = rootVisualElement.Q<EnumFlagsField>(Names.kPassFilterField);
             passFilter.style.display = DisplayStyle.None; // Hidden until the compiler is known
@@ -1655,12 +1716,7 @@ namespace UnityEditor.Rendering
             foreach (var graph in registeredGraph)
                 m_RegisteredGraphs.Add(graph, new HashSet<string>());
 
-            RenderGraph.isRenderGraphViewerActive = true;
-            RenderGraph.onGraphRegistered += OnGraphRegistered;
-            RenderGraph.onGraphUnregistered += OnGraphUnregistered;
-            RenderGraph.onExecutionRegistered += OnExecutionRegistered;
-            RenderGraph.onExecutionUnregistered += OnExecutionUnregistered;
-            RenderGraph.onDebugDataCaptured += OnDebugDataCaptured;
+            SubscribeToRenderGraphEvents();
 
             if (EditorPrefs.HasKey(kPassFilterLegacyEditorPrefsKey))
                 m_PassFilterLegacy = (PassFilterLegacy)EditorPrefs.GetInt(kPassFilterLegacyEditorPrefsKey);
@@ -1669,7 +1725,7 @@ namespace UnityEditor.Rendering
             if (EditorPrefs.HasKey(kResourceFilterEditorPrefsKey))
                 m_ResourceFilter = (ResourceFilter)EditorPrefs.GetInt(kResourceFilterEditorPrefsKey);
 
-            RenderGraphViewerLifetimeAnalytic.WindowOpened();
+            GraphicsToolLifetimeAnalytic.WindowOpened<RenderGraphViewer>();
         }
 
         void CreateGUI()
@@ -1687,14 +1743,40 @@ namespace UnityEditor.Rendering
 
         void OnDisable()
         {
+            UnsubscribeToRenderGraphEvents();
+            GraphicsToolLifetimeAnalytic.WindowClosed<RenderGraphViewer>();
+        }
+
+        void SubscribeToRenderGraphEvents()
+        {
+            if (RenderGraph.isRenderGraphViewerActive)
+                return;
+
+            RenderGraph.isRenderGraphViewerActive = true;
+            RenderGraph.onGraphRegistered += OnGraphRegistered;
+            RenderGraph.onGraphUnregistered += OnGraphUnregistered;
+            RenderGraph.onExecutionRegistered += OnExecutionRegistered;
+            RenderGraph.onExecutionUnregistered += OnExecutionUnregistered;
+            RenderGraph.onDebugDataCaptured += OnDebugDataCaptured;
+        }
+
+        void UnsubscribeToRenderGraphEvents()
+        {
+            if (!RenderGraph.isRenderGraphViewerActive)
+                return;
+
             RenderGraph.isRenderGraphViewerActive = false;
             RenderGraph.onGraphRegistered -= OnGraphRegistered;
             RenderGraph.onGraphUnregistered -= OnGraphUnregistered;
             RenderGraph.onExecutionRegistered -= OnExecutionRegistered;
             RenderGraph.onExecutionUnregistered -= OnExecutionUnregistered;
             RenderGraph.onDebugDataCaptured -= OnDebugDataCaptured;
+        }
 
-            RenderGraphViewerLifetimeAnalytic.WindowClosed();
+        void Update()
+        {
+            // UUM-70378: In case the OnDisable Unsubscribes to Render Graph events when coming back from a Maximized state
+            SubscribeToRenderGraphEvents();
         }
     }
 

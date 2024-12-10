@@ -73,9 +73,9 @@ namespace UnityEngine.Rendering
         [SerializeField] internal Matrix4x4 cachedTransform;
         [SerializeField] internal int cachedHashCode;
 
-        /// <summary>Whether spaces with no renderers need to be filled with bricks at lowest subdivision level.</summary>
+        /// <summary>Whether spaces with no renderers need to be filled with bricks at highest subdivision level.</summary>
         [HideInInspector]
-        [Tooltip("Whether Unity should fill empty space between renderers with bricks at the lowest subdivision level.")]
+        [Tooltip("Whether Unity should fill empty space between renderers with bricks at the highest subdivision level.")]
         public bool fillEmptySpaces = false;
 
 #if UNITY_EDITOR
@@ -164,14 +164,18 @@ namespace UnityEngine.Rendering
             return hash;
         }
 
-        internal float GetMinSubdivMultiplier(int maxSubdivision)
+        internal void GetSubdivisionOverride(int maxSubdivisionLevel, out int minLevel, out int maxLevel)
         {
-            return overridesSubdivLevels ? Mathf.Clamp(lowestSubdivLevelOverride / (float)(maxSubdivision - 1), 0.0f, 1.0f) : 0.0f;
-        }
-
-        internal float GetMaxSubdivMultiplier(int maxSubdivision)
-        {
-            return overridesSubdivLevels ? Mathf.Clamp(highestSubdivLevelOverride / (float)(maxSubdivision - 1), 0.0f, 1.0f) : 1.0f;
+            if (overridesSubdivLevels)
+            {
+                maxLevel = Mathf.Min(highestSubdivLevelOverride, maxSubdivisionLevel);
+                minLevel = Mathf.Min(lowestSubdivLevelOverride, maxLevel);
+            }
+            else
+            {
+                maxLevel = maxSubdivisionLevel;
+                minLevel = 0;
+            }
         }
 
         // Momentarily moving the gizmo rendering for bricks and cells to Probe Volume itself,
@@ -209,16 +213,17 @@ namespace UnityEngine.Rendering
         internal bool ShouldCullCell(Vector3 cellPosition)
         {
             var cellSizeInMeters = ProbeReferenceVolume.instance.MaxBrickSize();
-            var probeOffset = ProbeReferenceVolume.instance.ProbeOffset();
+            var probeOffset = ProbeReferenceVolume.instance.ProbeOffset() + ProbeVolumeDebug.currentOffset;
             var debugDisplay = ProbeReferenceVolume.instance.probeVolumeDebug;
             if (debugDisplay.realtimeSubdivision)
             {
-                if (!ProbeReferenceVolume.instance.TryGetBakingSetForLoadedScene(gameObject.scene, out var bakingSet))
+                var bakingSet = ProbeVolumeBakingSet.GetBakingSetForScene(gameObject.scene);
+                if (bakingSet == null)
                     return true;
 
                 // Use the non-backed data to display real-time info
                 cellSizeInMeters = ProbeVolumeBakingSet.GetMinBrickSize(bakingSet.minDistanceBetweenProbes) * ProbeVolumeBakingSet.GetCellSizeInBricks(bakingSet.simplificationLevels);
-                probeOffset = bakingSet.probeOffset;
+                probeOffset = bakingSet.probeOffset + ProbeVolumeDebug.currentOffset;
             }
             Camera activeCamera = Camera.current;
 #if UNITY_EDITOR
@@ -267,10 +272,11 @@ namespace UnityEngine.Rendering
 
             float minBrickSize = ProbeReferenceVolume.instance.MinBrickSize();
             var cellSizeInMeters = ProbeReferenceVolume.instance.MaxBrickSize();
-            var probeOffset = ProbeReferenceVolume.instance.ProbeOffset();
+            var probeOffset = ProbeReferenceVolume.instance.ProbeOffset() + ProbeVolumeDebug.currentOffset;
             if (debugDisplay.realtimeSubdivision)
             {
-                if (!ProbeReferenceVolume.instance.TryGetBakingSetForLoadedScene(gameObject.scene, out var bakingSet))
+                var bakingSet = ProbeVolumeBakingSet.GetBakingSetForScene(gameObject.scene);
+                if (bakingSet == null)
                     return;
 
                 // Overwrite settings with data from profile

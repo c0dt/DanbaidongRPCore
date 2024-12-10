@@ -168,10 +168,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
         public Vector2 scale;
         ///<summary>Texture scale function.</summary>
         public ScaleFunc func;
-        ///<summary>Depth buffer bit depth.</summary>
-        public DepthBits depthBufferBits;
-        ///<summary>Color format.</summary>
-        public GraphicsFormat colorFormat;
+        ///<summary>Color or depth stencil format.</summary>
+        public GraphicsFormat format;
         ///<summary>Filtering mode.</summary>
         public FilterMode filterMode;
         ///<summary>Addressing mode.</summary>
@@ -224,6 +222,34 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         ///<summary>Texture needs to be discarded on last use.</summary>
         public bool discardBuffer;
+
+
+        ///<summary>Depth buffer bit depth of the format. The setter convert the bits to valid depth stencil format and sets the format. The getter gets the depth bits of the format.</summary>
+        public DepthBits depthBufferBits
+        {
+            get { return (DepthBits)GraphicsFormatUtility.GetDepthBits(format); }
+            set
+            {                
+                if (value == DepthBits.None)
+                {
+                    if( !GraphicsFormatUtility.IsDepthStencilFormat(format) )
+                        return;
+                    else
+                        format = GraphicsFormat.None;
+                }
+                else
+                {
+                    format = GraphicsFormatUtility.GetDepthStencilFormat((int)value);
+                }                
+            }
+        }
+
+        ///<summary>Color format. Sets the format. The getter checks if format is a color format. Returns the format if a color format, otherwise returns GraphicsFormat.None.</summary>
+        public GraphicsFormat colorFormat
+        {
+            get { return GraphicsFormatUtility.IsDepthStencilFormat(format) ? GraphicsFormat.None : format; }
+            set { format = value; }
+        }
 
         void InitDefaultValues(bool dynamicResolution, bool xrReady)
         {
@@ -322,8 +348,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             slices = input.volumeDepth;
             scale = Vector2.one;
             func = null;
-            depthBufferBits = (DepthBits)input.depthBufferBits;
-            colorFormat = input.graphicsFormat;
+            format = (input.depthStencilFormat != GraphicsFormat.None) ? input.depthStencilFormat : input.graphicsFormat;
             filterMode = FilterMode.Bilinear;
             wrapMode = TextureWrapMode.Clamp;
             dimension = input.dimension;
@@ -360,7 +385,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             wrapMode = input.wrapMode;
             anisoLevel = input.anisoLevel;
             mipMapBias = input.mipMapBias;
-            this.name = "UnNamedFromRenderTextureDescriptor";
+            name = "UnNamedFromRenderTextureDescriptor";
         }
 
         /// <summary>
@@ -369,49 +394,42 @@ namespace UnityEngine.Rendering.RenderGraphModule
         /// <returns>The texture descriptor hash.</returns>
         public override int GetHashCode()
         {
-            int hashCode = 17;
-
-            unchecked
+            var hashCode = HashFNV1A32.Create();
+            switch (sizeMode)
             {
-                switch (sizeMode)
-                {
-                    case TextureSizeMode.Explicit:
-                        hashCode = hashCode * 23 + width;
-                        hashCode = hashCode * 23 + height;
-                        break;
-                    case TextureSizeMode.Functor:
-                        if (func != null)
-                            hashCode = hashCode * 23 + func.GetHashCode();
-                        break;
-                    case TextureSizeMode.Scale:
-                        hashCode = hashCode * 23 + scale.x.GetHashCode();
-                        hashCode = hashCode * 23 + scale.y.GetHashCode();
-                        break;
-                }
-
-                hashCode = hashCode * 23 + mipMapBias.GetHashCode();
-                hashCode = hashCode * 23 + slices;
-                hashCode = hashCode * 23 + (int)depthBufferBits;
-                hashCode = hashCode * 23 + (int)colorFormat;
-                hashCode = hashCode * 23 + (int)filterMode;
-                hashCode = hashCode * 23 + (int)wrapMode;
-                hashCode = hashCode * 23 + (int)dimension;
-                hashCode = hashCode * 23 + (int)memoryless;
-                hashCode = hashCode * 23 + (int)vrUsage;
-                hashCode = hashCode * 23 + anisoLevel;
-                hashCode = hashCode * 23 + (enableRandomWrite ? 1 : 0);
-                hashCode = hashCode * 23 + (useMipMap ? 1 : 0);
-                hashCode = hashCode * 23 + (autoGenerateMips ? 1 : 0);
-                hashCode = hashCode * 23 + (isShadowMap ? 1 : 0);
-                hashCode = hashCode * 23 + (bindTextureMS ? 1 : 0);
-                hashCode = hashCode * 23 + (useDynamicScale ? 1 : 0);
-                hashCode = hashCode * 23 + (int)msaaSamples;
-#if UNITY_2020_2_OR_NEWER
-                hashCode = hashCode * 23 + (fastMemoryDesc.inFastMemory ? 1 : 0);
-#endif
+                case TextureSizeMode.Explicit:
+                    hashCode.Append(width);
+                    hashCode.Append(height);
+                    break;
+                case TextureSizeMode.Functor:
+                    if (func != null)
+                        hashCode.Append(func);
+                    break;
+                case TextureSizeMode.Scale:
+                    hashCode.Append(scale);
+                    break;
             }
 
-            return hashCode;
+            hashCode.Append(mipMapBias);
+            hashCode.Append(slices);
+            hashCode.Append((int) format);
+            hashCode.Append((int) filterMode);
+            hashCode.Append((int) wrapMode);
+            hashCode.Append((int) dimension);
+            hashCode.Append((int) memoryless);
+            hashCode.Append((int) vrUsage);
+            hashCode.Append(anisoLevel);
+            hashCode.Append(enableRandomWrite);
+            hashCode.Append(useMipMap);
+            hashCode.Append(autoGenerateMips);
+            hashCode.Append(isShadowMap);
+            hashCode.Append(bindTextureMS);
+            hashCode.Append(useDynamicScale);
+            hashCode.Append((int) msaaSamples);
+#if UNITY_2020_2_OR_NEWER
+            hashCode.Append(fastMemoryDesc.inFastMemory);
+#endif
+            return hashCode.value;
         }
 
         /// <summary>
@@ -456,20 +474,20 @@ namespace UnityEngine.Rendering.RenderGraphModule
             // Textures are going to be reused under different aliases along the frame so we can't provide a specific name upon creation.
             // The name in the desc is going to be used for debugging purpose and render graph visualization.
             if (name == "")
-                name = $"RenderGraphTexture_{m_TextureCreationIndex++}";
+                name = $"RenderGraphTexture_{m_TextureCreationIndex++}";           
 
             switch (desc.sizeMode)
             {
                 case TextureSizeMode.Explicit:
-                    graphicsResource = RTHandles.Alloc(desc.width, desc.height, desc.slices, desc.depthBufferBits, desc.colorFormat, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
+                    graphicsResource = RTHandles.Alloc(desc.width, desc.height, desc.format, desc.slices, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
                         desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.useDynamicScaleExplicit, desc.memoryless, desc.vrUsage, name);
                     break;
                 case TextureSizeMode.Scale:
-                    graphicsResource = RTHandles.Alloc(desc.scale, desc.slices, desc.depthBufferBits, desc.colorFormat, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
+                    graphicsResource = RTHandles.Alloc(desc.scale, desc.format, desc.slices, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
                         desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.useDynamicScaleExplicit, desc.memoryless, desc.vrUsage, name);
                     break;
                 case TextureSizeMode.Functor:
-                    graphicsResource = RTHandles.Alloc(desc.func, desc.slices, desc.depthBufferBits, desc.colorFormat, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
+                    graphicsResource = RTHandles.Alloc(desc.func, desc.format, desc.slices, desc.filterMode, desc.wrapMode, desc.dimension, desc.enableRandomWrite,
                         desc.useMipMap, desc.autoGenerateMips, desc.isShadowMap, desc.anisoLevel, desc.mipMapBias, desc.msaaSamples, desc.bindTextureMS, desc.useDynamicScale, desc.useDynamicScaleExplicit, desc.memoryless, desc.vrUsage, name);
                     break;
             }

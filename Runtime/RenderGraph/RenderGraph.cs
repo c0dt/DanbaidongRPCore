@@ -371,7 +371,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         internal/*for tests*/ RenderGraphResourceRegistry m_Resources;
         RenderGraphObjectPool m_RenderGraphPool = new RenderGraphObjectPool();
         RenderGraphBuilders m_builderInstance = new RenderGraphBuilders();
-        List<RenderGraphPass> m_RenderPasses = new List<RenderGraphPass>(64);
+        internal/*for tests*/ List<RenderGraphPass> m_RenderPasses = new List<RenderGraphPass>(64);
         List<RendererListHandle> m_RendererLists = new List<RendererListHandle>(32);
         RenderGraphDebugParams m_DebugParameters = new RenderGraphDebugParams();
         RenderGraphLogger m_FrameInformationLogger = new RenderGraphLogger();
@@ -958,10 +958,10 @@ namespace UnityEngine.Rendering.RenderGraphModule
             [CallerLineNumber] int line = 0) where PassData : class, new()
 #endif
         {
-            AddPassDebugMetadata(passName, file, line);
-
             var renderPass = m_RenderGraphPool.Get<RasterRenderGraphPass<PassData>>();
             renderPass.Initialize(m_RenderPasses.Count, m_RenderGraphPool.Get<PassData>(), passName, RenderGraphPassType.Raster, sampler);
+
+            AddPassDebugMetadata(renderPass, file, line);
 
             passData = renderPass.data;
 
@@ -1005,10 +1005,10 @@ namespace UnityEngine.Rendering.RenderGraphModule
             [CallerLineNumber] int line = 0) where PassData : class, new()
 #endif
         {
-            AddPassDebugMetadata(passName, file, line);
-
             var renderPass = m_RenderGraphPool.Get<ComputeRenderGraphPass<PassData>>();
             renderPass.Initialize(m_RenderPasses.Count, m_RenderGraphPool.Get<PassData>(), passName, RenderGraphPassType.Compute, sampler);
+
+            AddPassDebugMetadata(renderPass, file, line);
 
             passData = renderPass.data;
 
@@ -1066,11 +1066,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
             [CallerLineNumber] int line = 0) where PassData : class, new()
 #endif
         {
-            AddPassDebugMetadata(passName, file, line);
-
             var renderPass = m_RenderGraphPool.Get<UnsafeRenderGraphPass<PassData>>();
             renderPass.Initialize(m_RenderPasses.Count, m_RenderGraphPool.Get<PassData>(), passName, RenderGraphPassType.Unsafe, sampler);
             renderPass.AllowGlobalState(true);
+
+            AddPassDebugMetadata(renderPass, file, line);
 
             passData = renderPass.data;
 
@@ -1096,11 +1096,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
             [CallerLineNumber] int line = 0) where PassData : class, new()
 #endif
         {
-            AddPassDebugMetadata(passName, file, line);
-
-            var renderPass = m_RenderGraphPool.Get<RenderGraphPass<PassData>>();
+            var renderPass = m_RenderGraphPool.Get<RenderGraphPass<PassData>>();          
             renderPass.Initialize(m_RenderPasses.Count, m_RenderGraphPool.Get<PassData>(), passName, RenderGraphPassType.Legacy, sampler);
             renderPass.AllowGlobalState(true);// Old pass types allow global state by default as HDRP relies on it
+
+            AddPassDebugMetadata(renderPass, file, line);
 
             passData = renderPass.data;
 
@@ -1224,10 +1224,18 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
                     m_Resources.BeginExecute(m_CurrentFrameIndex);
 
+#if UNITY_EDITOR
+                    // Feeding Render Graph Viewer before resource deallocation at pass execution
+                    GenerateDebugData();
+#endif
+
                     if (nativeRenderPassesEnabled)
                         ExecuteNativeRenderGraph();
                     else
                         ExecuteRenderGraph();
+
+                    // Clear the shader bindings for all global textures to make sure bindings don't leak outside the graph
+                    ClearGlobalBindings();
                 }
             }
             catch (Exception e)
@@ -1249,8 +1257,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
             finally
             {
-                GenerateDebugData();
-
                 if (m_DebugParameters.immediateMode)
                     ReleaseImmediateModeResources();
 
@@ -1360,7 +1366,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         {
             if (m_DebugParameters.immediateMode)
             {
-                ExecutePassImmediatly(pass);
+                ExecutePassImmediately(pass);
             }
         }
 
@@ -1381,11 +1387,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
         {
             using (new ProfilingScope(ProfilingSampler.Get(RenderGraphProfileId.ComputeHashRenderGraph)))
             {
-                int hash = 0;
+                var hash128 = HashFNV1A32.Create();
                 for (int i = 0; i < m_RenderPasses.Count; ++i)
-                    hash = hash * 23 + m_RenderPasses[i].ComputeHash(m_Resources);
+                    m_RenderPasses[i].ComputeHash(ref hash128, m_Resources);
 
-                return hash;
+                return hash128.value;
             }
         }
 
@@ -2085,7 +2091,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             return ref passInfo;
         }
 
-        void ExecutePassImmediatly(RenderGraphPass pass)
+        void ExecutePassImmediately(RenderGraphPass pass)
         {
             ExecuteCompiledPass(ref CompilePassImmediatly(pass));
         }
@@ -2098,9 +2104,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             var pass = m_RenderPasses[passInfo.index];
 
             if (!pass.HasRenderFunc())
-            {
-                throw new InvalidOperationException(string.Format("RenderPass {0} was not provided with an execute function.", pass.name));
-            }
+                throw new InvalidOperationException($"RenderPass {pass.name} was not provided with an execute function.");
 
             try
             {
@@ -2203,11 +2207,12 @@ namespace UnityEngine.Rendering.RenderGraphModule
             // Need to save the command buffer to restore it later as the one in the context can changed if running a pass async.
             m_PreviousCommandBuffer = rgContext.cmd;
 
+            bool executedWorkDuringResourceCreation = false;
             for (int type = 0; type < (int)RenderGraphResourceType.Count; ++type)
             {
                 foreach (int resource in passInfo.resourceCreateList[type])
                 {
-                    m_Resources.CreatePooledResource(rgContext, type, resource);
+                    executedWorkDuringResourceCreation |= m_Resources.CreatePooledResource(rgContext, type, resource);
                 }
             }
 
@@ -2218,6 +2223,12 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
             if (passInfo.enableAsyncCompute)
             {
+                GraphicsFence previousFence = new GraphicsFence();
+                if (executedWorkDuringResourceCreation)
+                {
+                    previousFence = rgContext.cmd.CreateGraphicsFence(GraphicsFenceType.AsyncQueueSynchronisation, SynchronisationStageFlags.AllGPUOperations);
+                }
+
                 // Flush current command buffer on the render context before enqueuing async commands.
                 if (rgContext.contextlessTesting == false)
                     rgContext.renderContext.ExecuteCommandBuffer(rgContext.cmd);
@@ -2226,6 +2237,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 CommandBuffer asyncCmd = CommandBufferPool.Get(pass.name);
                 asyncCmd.SetExecutionFlags(CommandBufferExecutionFlags.AsyncCompute);
                 rgContext.cmd = asyncCmd;
+
+                if (executedWorkDuringResourceCreation)
+                {
+                    rgContext.cmd.WaitOnAsyncGraphicsFence(previousFence);
+                }
             }
 
             // Synchronize with graphics or compute pipe if needed.
@@ -2547,13 +2563,16 @@ namespace UnityEngine.Rendering.RenderGraphModule
             m_DebugData.Clear();
         }
 
-#endregion
+        #endregion
 
 
         Dictionary<int, TextureHandle> registeredGlobals = new Dictionary<int, TextureHandle>();
 
         internal void SetGlobal(TextureHandle h, int globalPropertyId)
         {
+            if (!h.IsValid())
+                throw new ArgumentException("Attempting to register an invalid texture handle as a global");
+
             registeredGlobals[globalPropertyId] = h;
         }
 
@@ -2572,6 +2591,22 @@ namespace UnityEngine.Rendering.RenderGraphModule
             TextureHandle h;
             registeredGlobals.TryGetValue(globalPropertyId, out h);
             return h;
+        }
+
+        /// <summary>
+        /// Clears the shader bindings associated with the registered globals in the graph
+        ///
+        /// This prevents later rendering logic from accidentally relying on stale shader bindings that were set
+        /// earlier during graph execution.
+        /// </summary>
+        internal void ClearGlobalBindings()
+        {
+            // Set all the global texture shader bindings to the default black texture.
+            // This doesn't technically "clear" the shader bindings, but it's the closest we can do.
+            foreach (var globalTex in registeredGlobals)
+            {
+                m_RenderGraphContext.cmd.SetGlobalTexture(globalTex.Key, defaultResources.blackTexture);
+            }
         }
     }
 

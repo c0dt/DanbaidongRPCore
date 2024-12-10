@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler;
 
 namespace UnityEngine.Rendering.RenderGraphModule
 {
@@ -48,6 +49,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 // Whether the pass is an async compute pass.
                 public bool async;
 
+                // Native subpass index.
+                public int nativeSubPassIndex;
+
                 // Index of the pass that needs to be waited for.
                 public int syncToPassIndex;
 
@@ -65,11 +69,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
                         public class AttachmentInfo
                         {
                             public string resourceName;
-                            public string loadAction;
                             public string loadReason;
-                            public string storeAction;
                             public string storeReason;
                             public string storeMsaaReason;
+                            public int attachmentIndex;
+                            public NativePassAttachment attachment;
                         }
 
                         public struct PassCompatibilityInfo
@@ -185,7 +189,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
 
             // Script metadata for passes.
-            internal static readonly Dictionary<string, PassScriptInfo> s_PassScriptMetadata = new ();
+            internal static readonly Dictionary<System.Object, PassScriptInfo> s_PassScriptMetadata = new ();
 
             // Pass script metadata.
             public class PassScriptInfo
@@ -198,24 +202,17 @@ namespace UnityEngine.Rendering.RenderGraphModule
         readonly string[] k_PassNameDebugIgnoreList = new string[] { k_BeginProfilingSamplerPassName, k_EndProfilingSamplerPassName };
 
         [Conditional("UNITY_EDITOR")]
-        void AddPassDebugMetadata(string passName, string file, int line)
+        void AddPassDebugMetadata(RenderGraphPass renderPass, string file, int line)
         {
             // Does nothing unless debug data capture is requested
             if (m_CaptureDebugDataForExecution == null)
                 return;
 
             for (int i = 0; i < k_PassNameDebugIgnoreList.Length; ++i)
-                if (passName == k_PassNameDebugIgnoreList[i])
+                if (renderPass.name == k_PassNameDebugIgnoreList[i])
                     return;
 
-            if (!DebugData.s_PassScriptMetadata.TryAdd(passName, new DebugData.PassScriptInfo { filePath = file, line = line }))
-            {
-                var existingFile = DebugData.s_PassScriptMetadata[passName].filePath;
-                var existingLine = DebugData.s_PassScriptMetadata[passName].line;
-                if (existingFile != file || existingLine != line)
-                    Debug.LogWarning($"Two passes called {passName} in different locations: {existingFile}:{existingLine}" +
-                                     $" and {file}:{line}. Jumping to source from Render Graph Viewer will only work correctly for {existingFile}:{existingLine}.");
-            }
+            DebugData.s_PassScriptMetadata.TryAdd(renderPass, new DebugData.PassScriptInfo { filePath = file, line = line });
         }
 
         [Conditional("UNITY_EDITOR")]

@@ -33,10 +33,9 @@ namespace UnityEditor.Rendering
             {
                 Undo.RecordObject(pv.transform, "Fitting Adaptive Probe Volume");
 
-                // Get minBrickSize from scene profile if available
-                float minBrickSize = ProbeReferenceVolume.instance.MinBrickSize();
-                if (ProbeReferenceVolume.instance.TryGetBakingSetForLoadedScene(pv.gameObject.scene, out var profile))
-                    minBrickSize = profile.minBrickSize;
+                // Get minBrickSize from scene baking set if available
+                var bakingSet = ProbeVolumeLightingTab.GetSceneBakingSetForUI(pv.gameObject.scene);
+                float minBrickSize = bakingSet != null ? bakingSet.minBrickSize : ProbeReferenceVolume.instance.MinBrickSize();
 
                 var bounds = pv.ComputeBounds(filter.Value, pv.gameObject.scene);
                 pv.transform.position = bounds.center;
@@ -46,11 +45,11 @@ namespace UnityEditor.Rendering
 
         static int s_SubdivisionRangeID = "SubdivisionRange".GetHashCode();
 
-        static void SubdivisionRange(SerializedProbeVolume serialized, int maxSubdiv, float minDistance)
+        static void SubdivisionRange(SerializedProbeVolume serialized, int maxSimplicationLevel, float minDistance)
         {
             var rect = EditorGUILayout.GetControlRect();
-            EditorGUI.BeginProperty(rect, Styles.s_DistanceBetweenProbes, serialized.highestSubdivisionLevelOverride);
-            EditorGUI.BeginProperty(rect, Styles.s_DistanceBetweenProbes, serialized.lowestSubdivisionLevelOverride);
+            EditorGUI.BeginProperty(rect, Styles.s_DistanceBetweenProbes, serialized.minSubdivisionLevel);
+            EditorGUI.BeginProperty(rect, Styles.s_DistanceBetweenProbes, serialized.maxSubdivisionLevel);
             EditorGUI.BeginProperty(rect, Styles.s_DistanceBetweenProbes, serialized.overridesSubdivision);
 
             var checkbox = new Rect(rect) { width = 14 + 9, x = rect.x + 2 };
@@ -64,26 +63,22 @@ namespace UnityEditor.Rendering
                 rect = EditorGUI.PrefixLabel(rect, id, Styles.s_DistanceBetweenProbes);
                 EditorGUIUtility.labelWidth += checkbox.width;
 
-                if (serialized.highestSubdivisionLevelOverride.intValue > maxSubdiv)
-                    serialized.highestSubdivisionLevelOverride.intValue = maxSubdiv;
-                if (serialized.lowestSubdivisionLevelOverride.intValue > maxSubdiv)
-                    serialized.lowestSubdivisionLevelOverride.intValue = maxSubdiv;
+                // Make sure data is valid
+                float maxLevelOverride = Mathf.Min(serialized.maxSubdivisionLevel.intValue, maxSimplicationLevel);
+                float minLevelOverride = Mathf.Min(serialized.minSubdivisionLevel.intValue, maxLevelOverride);
 
-                float highest = maxSubdiv - serialized.highestSubdivisionLevelOverride.intValue;
-                float lowest = maxSubdiv - serialized.lowestSubdivisionLevelOverride.intValue;
                 EditorGUI.BeginChangeCheck();
-                EditorGUI.MinMaxSlider(rect, ref highest, ref lowest, 0, maxSubdiv);
+                EditorGUI.MinMaxSlider(rect, ref minLevelOverride, ref maxLevelOverride, 0, maxSimplicationLevel);
                 if (EditorGUI.EndChangeCheck())
                 {
                     GUIUtility.keyboardControl = id;
-                    highest = maxSubdiv - Mathf.RoundToInt(highest);
-                    lowest = Mathf.Min(maxSubdiv - Mathf.RoundToInt(lowest), highest);
 
-                    serialized.highestSubdivisionLevelOverride.intValue = Mathf.RoundToInt(highest);
-                    serialized.lowestSubdivisionLevelOverride.intValue = Mathf.RoundToInt(lowest);
+                    serialized.minSubdivisionLevel.intValue = Mathf.RoundToInt(minLevelOverride);
+                    serialized.maxSubdivisionLevel.intValue = Mathf.RoundToInt(maxLevelOverride);
                 }
 
-                ProbeVolumeLightingTab.DrawSimplificationLevelsMarkers(rect, minDistance, 0, maxSubdiv, (int)highest, (int)lowest);
+                ProbeVolumeLightingTab.DrawSimplificationLevelsMarkers(rect, minDistance, 0, maxSimplicationLevel,
+                    serialized.minSubdivisionLevel.intValue, serialized.maxSubdivisionLevel.intValue);
             }
 
             EditorGUI.EndProperty();
@@ -94,10 +89,7 @@ namespace UnityEditor.Rendering
         static void Drawer_VolumeContent(SerializedProbeVolume serialized, Editor owner)
         {
             ProbeVolume pv = (serialized.serializedObject.targetObject as ProbeVolume);
-
-            ProbeReferenceVolume.instance.TryGetBakingSetForLoadedScene(pv.gameObject.scene, out var bakingSet);
-            if (bakingSet == null)
-                bakingSet = ProbeVolumeLightingTab.GetSingleSceneSet(pv.gameObject.scene);
+            var bakingSet = ProbeVolumeLightingTab.GetSceneBakingSetForUI(pv.gameObject.scene);
 
             EditorGUILayout.PropertyField(serialized.mode);
             if (serialized.mode.intValue == (int)ProbeVolume.Mode.Local)
@@ -117,21 +109,20 @@ namespace UnityEditor.Rendering
             using (new EditorGUI.DisabledScope(isFreezingPlacement))
             {
                 // Get settings from scene profile if available
-                int maxSubdiv = ProbeReferenceVolume.instance.GetMaxSubdivision() - 1;
+                int simplificationLevels = ProbeReferenceVolume.instance.GetMaxSubdivision() - 1;
                 float minDistance = ProbeReferenceVolume.instance.MinDistanceBetweenProbes();
                 if (bakingSet != null)
                 {
-                    maxSubdiv = bakingSet.simplificationLevels;
+                    simplificationLevels = bakingSet.simplificationLevels;
                     minDistance = bakingSet.minDistanceBetweenProbes;
                 }
-                if (maxSubdiv == -1)
+                if (simplificationLevels < 0)
                 {
-                    maxSubdiv = 5;
+                    simplificationLevels = 5;
                     minDistance = 1;
                 }
-                maxSubdiv = Mathf.Max(0, maxSubdiv);
 
-                SubdivisionRange(serialized, maxSubdiv, minDistance);
+                SubdivisionRange(serialized, simplificationLevels, minDistance);
             }
 
             if (isFreezingPlacement)
@@ -162,7 +153,7 @@ namespace UnityEditor.Rendering
             }
 
             EditorGUILayout.Space();
-            using (new EditorGUI.DisabledScope(bakingSet == null))
+            using (new EditorGUI.DisabledScope(Lightmapping.isRunning || bakingSet == null))
             {
                 ProbeVolumeLightingTab.BakeAPVButton();
             }

@@ -1,9 +1,23 @@
+using System;
+using Unity.Mathematics;
+
 namespace UnityEngine.Rendering
 {
     [GenerateHLSL]
     class APVDefinitions
     {
         public static int probeIndexChunkSize = ProbeBrickIndex.kIndexChunkSize;
+        public const float probeValidityThreshold = 0.05f;
+
+        public static int probeMaxRegionCount = 4;
+        public static Color32[] layerMaskColors = new Color32[] {
+            new Color32(230, 159, 0, 255),
+            new Color32(0, 158, 115, 255),
+            new Color32(0, 114, 178, 255),
+            new Color32(204, 121, 167, 255),
+        };
+
+        public static Color debugEmptyColor = new Color(0.388f, 0.812f, 0.804f, 1.0f);
     }
 
     /// <summary>
@@ -29,28 +43,39 @@ namespace UnityEngine.Rendering
         None = 0,
         /// <summary>
         /// The uvw used to sample APV data are warped to try to have invalid probe not contributing to lighting.
-        /// This only modifies the uvw used, but still sample a single time. It is effective when using rendering layers or in some situations (especially when occluding object contain probes inside) but ineffective in many other.
+        /// This samples APV a single time so it's a cheap option but will only work in the simplest cases.
         /// </summary>
-        ValidityBased = 1,
+        Performance = 1,
         /// <summary>
-        /// The uvw used to sample APV data are warped to try to have invalid probe not contributing to lighting. Also, a geometric weight based on normal at sampling position and vector to probes is used.
-        /// This only modifies the uvw used, but still sample a single time. It is effective in some situations (especially when occluding object contain probes inside) but ineffective in many other.
+        /// This option samples APV between 1 and 3 times to provide the smoothest result without introducing artifacts.
+        /// This is as expensive as Performance mode in the simplest cases, and is better and more expensive in the most complex cases.
         /// </summary>
-        ValidityAndNormalBased = 2,
+        Quality = 2,
 
+        /// <summary>
+        /// Obsolete, kept for migration.
+        /// </summary>
+        [Obsolete("Performance")]
+        ValidityBased = Performance,
+        /// <summary>
+        /// Obsolete, kept for migration.
+        /// </summary>
+        [Obsolete("Quality")]
+        ValidityAndNormalBased = Quality,
     }
 
     [GenerateHLSL(needAccessors = false, generateCBuffer = true, constantRegister = (int)APVConstantBufferRegister.GlobalRegister)]
     internal unsafe struct ShaderVariablesProbeVolumes
     {
-        public Vector4 _Offset_IndirectionEntryDim;
-        public Vector4 _Weight_MinLoadedCellInEntries;
+        public Vector4 _Offset_LayerCount;
+        public Vector4 _MinLoadedCellInEntries_IndirectionEntryDim;
+        public Vector4 _MaxLoadedCellInEntries_RcpIndirectionEntryDim;
         public Vector4 _PoolDim_MinBrickSize;
         public Vector4 _RcpPoolDim_XY;
         public Vector4 _MinEntryPos_Noise;
-        public Vector4 _IndicesDim_FrameIndex;
+        public uint4 _EntryCount_X_XY_LeakReduction;
         public Vector4 _Biases_NormalizationClamp;
-        public Vector4 _LeakReduction_SkyOcclusion;
-        public Vector4 _MaxLoadedCellInEntries_Padding;
+        public Vector4 _FrameIndex_Weights;
+        public uint4 _ProbeVolumeLayerMask;
     }
 }

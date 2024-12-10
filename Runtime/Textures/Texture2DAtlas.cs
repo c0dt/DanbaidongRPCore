@@ -227,8 +227,8 @@ namespace UnityEngine.Rendering
             m_AtlasTexture = RTHandles.Alloc(
                 width: m_Width,
                 height: m_Height,
+                format: m_Format,
                 filterMode: filterMode,
-                colorFormat: m_Format,
                 wrapMode: TextureWrapMode.Clamp,
                 useMipMap: useMipMap,
                 autoGenerateMips: false,
@@ -634,6 +634,32 @@ namespace UnityEngine.Rendering
             // are valid for the texture if we need them
             else if (m_IsGPUTextureUpToDate.TryGetValue(key, out var value))
                 return value == kGPUTexInvalid || (needMips && value == kGPUTexValidMip0);
+
+            return false;
+        }
+
+        /// <summary>
+        /// Check if a slot needs to be updated in the atlas.
+        /// </summary>
+        /// <param name="id">The id.</param>
+        /// <param name="updateCount">The update count.</param>
+        /// <param name="needMips">Texture uses mips.</param>
+        /// <returns>True if slot needs update, false otherwise.</returns>
+        public virtual bool NeedsUpdate(int id, int updateCount, bool needMips = false)
+        {
+            int atlasUpdateCount;
+            if (m_IsGPUTextureUpToDate.TryGetValue(id, out atlasUpdateCount))
+            {
+                if (updateCount != atlasUpdateCount)
+                {
+                    m_IsGPUTextureUpToDate[id] = updateCount;
+                    return true;
+                }
+            }
+            else
+            {
+                m_IsGPUTextureUpToDate[id] = updateCount;
+            }
 
             return false;
         }

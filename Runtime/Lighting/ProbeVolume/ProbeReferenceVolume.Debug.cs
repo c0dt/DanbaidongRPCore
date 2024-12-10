@@ -33,6 +33,10 @@ namespace UnityEngine.Rendering
         /// </summary>
         ValidityOverDilationThreshold,
         /// <summary>
+        /// Based on rendering layer masks
+        /// </summary>
+        RenderingLayerMasks,
+        /// <summary>
         /// Show in red probes that have been made invalid by adjustment volumes. Important to note that this debug view will only show result for volumes still present in the scene.
         /// </summary>
         InvalidatedByAdjustmentVolumes,
@@ -47,7 +51,11 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Based on shading direction
         /// </summary>
-        SkyDirection
+        SkyDirection,
+        /// <summary>
+        /// Occlusion values per probe
+        /// </summary>
+        ProbeOcclusion,
     }
 
     enum ProbeSamplingDebugUpdate
@@ -67,7 +75,6 @@ namespace UnityEngine.Rendering
         public GraphicsBuffer positionNormalBuffer; // buffer storing position and normal
     }
 
-
     class ProbeVolumeDebug : IDebugData
     {
         public bool drawProbes;
@@ -86,6 +93,7 @@ namespace UnityEngine.Rendering
         public bool drawProbeSamplingDebug = false;
         public float probeSamplingDebugSize = 0.3f;
         public bool debugWithSamplingNoise = false;
+        public uint samplingRenderingLayer;
         public bool drawVirtualOffsetPush;
         public float offsetSize = 0.025f;
         public bool freezeStreaming;
@@ -96,6 +104,11 @@ namespace UnityEngine.Rendering
         public bool debugStreaming = false;
         public bool autoDrawProbes = true;
         public bool isolationProbeDebug = true;
+        public byte visibleLayers;
+
+        // NOTE: We should get that from the camera directly instead of storing it as static
+        // But we can't access the volume parameters as they are specific to the RP
+        public static Vector3 currentOffset;
 
         static internal int s_ActiveAdjustmentVolumes = 0;
 
@@ -129,6 +142,7 @@ namespace UnityEngine.Rendering
             otherStateIndex = 0;
             autoDrawProbes = true;
             isolationProbeDebug = true;
+            visibleLayers = 0xFF;
         }
 
         public Action GetReset() => () => Init();
@@ -191,7 +205,10 @@ namespace UnityEngine.Rendering
             get
             {
                 if (m_DebugMesh == null)
+                {
                     m_DebugMesh = DebugShapes.instance.BuildCustomSphereMesh(0.5f, 9, 8); // (longSubdiv + 1) * latSubdiv + 2 = 82
+                    m_DebugMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 9999999.9f); // dirty way of disabling culling (objects spawned at (0.0, 0.0, 0.0) but vertices moved in vertex shader)
+                }
                 return m_DebugMesh;
             }
         }
@@ -225,14 +242,29 @@ namespace UnityEngine.Rendering
         bool m_MaxSubdivVisualizedIsMaxAvailable = false;
 
         /// <summary>
-        ///  Render Probe Volume related debug
+        /// Obsolete. Render Probe Volume related debug
         /// </summary>
         /// <param name="camera">The <see cref="Camera"/></param>
         /// <param name="exposureTexture">Texture containing the exposure value for this frame.</param>
+        [Obsolete("Use the other override to support sampling offset in debug modes.")]
         public void RenderDebug(Camera camera, Texture exposureTexture)
+        {
+            RenderDebug(camera, null, exposureTexture);
+        }
+        
+        /// <summary>
+        /// Render Probe Volume related debug
+        /// </summary>
+        /// <param name="camera">The <see cref="Camera"/></param>
+        /// <param name="options">Options coming from the volume stack.</param>
+        /// <param name="exposureTexture">Texture containing the exposure value for this frame.</param>
+        public void RenderDebug(Camera camera, ProbeVolumesOptions options, Texture exposureTexture)
         {
             if (camera.cameraType != CameraType.Reflection && camera.cameraType != CameraType.Preview)
             {
+                if (options != null)
+                    ProbeVolumeDebug.currentOffset = options.worldOffset.value;
+
                 DrawProbeDebug(camera, exposureTexture);
             }
         }
@@ -257,6 +289,9 @@ namespace UnityEngine.Rendering
         {
             resultBuffer = probeSamplingDebugData.positionNormalBuffer;
             coords = probeSamplingDebugData.coordinates;
+
+            if (!probeVolumeDebug.drawProbeSamplingDebug)
+                return false;
 
 #if UNITY_EDITOR
             if (probeSamplingDebugData.camera != camera)
@@ -313,6 +348,13 @@ namespace UnityEngine.Rendering
             ProbeReferenceVolume.probeSamplingDebugData.camera = sceneView.camera;
             ProbeReferenceVolume.probeSamplingDebugData.coordinates = screenCoordinates;
 
+            if (e.type != EventType.Repaint && e.type != EventType.Layout)
+            {
+                var go = HandleUtility.PickGameObject(e.mousePosition, false);
+                if (go != null && go.TryGetComponent<MeshRenderer>(out var renderer))
+                    instance.probeVolumeDebug.samplingRenderingLayer = renderer.renderingLayerMask;
+            }
+
             SceneView.currentDrawingSceneView.Repaint(); // useful when 'Always Refresh' is not toggled
         }
 #endif
@@ -344,6 +386,7 @@ namespace UnityEngine.Rendering
             m_DisplayNumbersTexture = debugResources.numbersDisplayTex;
 
             m_DebugOffsetMesh = Resources.GetBuiltinResource<Mesh>("pyramid.fbx");
+            m_DebugOffsetMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 9999999.9f); // dirty way of disabling culling (objects spawned at (0.0, 0.0, 0.0) but vertices moved in vertex shader)
             m_DebugOffsetMaterial = CoreUtils.CreateEngineMaterial(debugResources.probeVolumeOffsetDebugShader);
             m_DebugOffsetMaterial.enableInstancing = true;
             m_DebugFragmentationMaterial = CoreUtils.CreateEngineMaterial(debugResources.probeVolumeFragmentationDebugShader);
@@ -478,7 +521,6 @@ namespace UnityEngine.Rendering
             };
 
             probeContainer.children.Add(new DebugUI.BoolField { displayName = "Display Probes", tooltip = "Render the debug view showing probe positions. Use the shading mode to determine which type of lighting data to visualize.", getter = () => probeVolumeDebug.drawProbes, setter = value => probeVolumeDebug.drawProbes = value, onValueChanged = RefreshDebug });
-            if (probeVolumeDebug.drawProbes)
             {
                 var probeContainerChildren = new DebugUI.Container()
                 {
@@ -512,6 +554,7 @@ namespace UnityEngine.Rendering
                             DebugProbeShadingMode.SHL0L1 => false,
                             DebugProbeShadingMode.SkyOcclusionSH => false,
                             DebugProbeShadingMode.SkyDirection => false,
+                            DebugProbeShadingMode.ProbeOcclusion => false,
                             _ => true
                         };
                     }
@@ -572,7 +615,7 @@ namespace UnityEngine.Rendering
                 {
                     probeVolumeDebug.drawVirtualOffsetPush = value;
 
-                    if (probeVolumeDebug.drawVirtualOffsetPush && probeVolumeDebug.drawProbes)
+                    if (probeVolumeDebug.drawVirtualOffsetPush && probeVolumeDebug.drawProbes && m_CurrentBakingSet != null)
                     {
                         // If probes are being drawn when enabling offset, automatically scale them down to a reasonable size so the arrows aren't obscured by the probes.
                         var searchDistance = CellSize(0) * MinBrickSize() / ProbeBrickPool.kBrickCellCount * m_CurrentBakingSet.settings.virtualOffsetSettings.searchMultiplier + m_CurrentBakingSet.settings.virtualOffsetSettings.outOfGeoOffset;
@@ -857,7 +900,7 @@ namespace UnityEngine.Rendering
         Bounds GetCellBounds(Vector3 cellPosition)
         {
             var cellSize = MaxBrickSize();
-            var cellOffset = ProbeOffset();
+            var cellOffset = ProbeOffset() + ProbeVolumeDebug.currentOffset;
             Vector3 cellCenterWS = cellOffset + cellPosition * cellSize + Vector3.one * (cellSize / 2.0f);
 
             return new Bounds(cellCenterWS, cellSize * Vector3.one);
@@ -935,11 +978,12 @@ namespace UnityEngine.Rendering
             m_ProbeSamplingDebugMaterial.renderQueue = (int)RenderQueue.Transparent;
             m_ProbeSamplingDebugMaterial02.renderQueue = (int)RenderQueue.Transparent;
 
-            m_DebugMaterial.SetVector("_DebugEmptyProbeData", new Vector4(0.388f, 0.812f, 0.804f, 1.0f));
+            m_DebugMaterial.SetVector("_DebugEmptyProbeData", APVDefinitions.debugEmptyColor);
 
             if (probeVolumeDebug.drawProbeSamplingDebug)
             {
                 m_ProbeSamplingDebugMaterial.SetInt("_ShadingMode", (int)probeVolumeDebug.probeShading);
+                m_ProbeSamplingDebugMaterial.SetInt("_RenderingLayerMask", (int)probeVolumeDebug.samplingRenderingLayer);
                 m_ProbeSamplingDebugMaterial.SetVector("_DebugArrowColor", new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
                 m_ProbeSamplingDebugMaterial.SetVector("_DebugLocator01Color", new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
                 m_ProbeSamplingDebugMaterial.SetVector("_DebugLocator02Color", new Vector4(0.3f, 0.3f, 0.3f, 1.0f));
@@ -989,6 +1033,7 @@ namespace UnityEngine.Rendering
                     props.SetInt("_MaxAllowedSubdiv", maxSubdivToVisualize);
                     props.SetInt("_MinAllowedSubdiv", minSubdivToVisualize);
                     props.SetFloat("_ValidityThreshold", m_CurrentBakingSet.settings.dilationSettings.dilationValidityThreshold);
+                    props.SetInt("_RenderingLayerMask", probeVolumeDebug.visibleLayers);
                     props.SetFloat("_OffsetSize", probeVolumeDebug.offsetSize);
                     props.SetTexture("_ExposureTexture", exposureTexture);
 
@@ -996,6 +1041,7 @@ namespace UnityEngine.Rendering
                     {
                         m_DebugMaterial.SetVectorArray("_TouchupVolumeBounds", adjustmentVolumeBounds);
                         m_DebugMaterial.SetInt("_AdjustmentVolumeCount", probeVolumeDebug.isolationProbeDebug ? adjustmentVolumeCount : 0);
+                        m_DebugMaterial.SetVector("_ScreenSize", new Vector4(camera.pixelWidth, camera.pixelHeight, 1.0f/camera.pixelWidth, 1.0f/camera.pixelHeight));
 
                         var probeBuffer = debug.probeBuffers[i];
                         m_DebugMaterial.SetInt("_DebugProbeVolumeSampling", 0);
@@ -1007,8 +1053,10 @@ namespace UnityEngine.Rendering
                     {
                         var probeBuffer = debug.probeBuffers[i];
                         m_ProbeSamplingDebugMaterial02.SetInt("_DebugProbeVolumeSampling", 1);
+                        props.SetInt("_ShadingMode", (int)DebugProbeShadingMode.SH);
                         props.SetFloat("_ProbeSize", probeVolumeDebug.probeSamplingDebugSize);
                         props.SetInt("_DebugSamplingNoise", Convert.ToInt32(probeVolumeDebug.debugWithSamplingNoise));
+                        props.SetInt("_RenderingLayerMask", (int)probeVolumeDebug.samplingRenderingLayer);
                         m_ProbeSamplingDebugMaterial02.SetBuffer("_positionNormalBuffer", probeSamplingDebugData.positionNormalBuffer);
                         Graphics.DrawMeshInstanced(debugMesh, 0, m_ProbeSamplingDebugMaterial02, probeBuffer, probeBuffer.Length, props, ShadowCastingMode.Off, false, 0, camera, LightProbeUsage.Off, null);
                     }
@@ -1052,6 +1100,7 @@ namespace UnityEngine.Rendering
             var chunks = cell.poolInfo.chunkList;
 
             Vector4[] texels = new Vector4[kProbesPerBatch];
+            float[] layer = new float[kProbesPerBatch];
             float[] validity = new float[kProbesPerBatch];
             float[] dilationThreshold = new float[kProbesPerBatch];
             float[] relativeSize = new float[kProbesPerBatch];
@@ -1093,12 +1142,15 @@ namespace UnityEngine.Rendering
                             Vector3Int texelLoc = new Vector3Int(brickStart.x + x, brickStart.y + y, brickStart.z + z);
 
                             int probeFlatIndex = chunkIndex * chunkSizeInProbes + (bx + x) + loc.x * ((by + y) + loc.y * (bz + z));
+                            var position = cell.data.probePositions[probeFlatIndex] - ProbeOffset(); // Offset is applied in shader
 
-                            probeBuffer.Add(Matrix4x4.TRS(cell.data.probePositions[probeFlatIndex], Quaternion.identity, Vector3.one * (0.3f * (brickSize + 1))));
+                            probeBuffer.Add(Matrix4x4.TRS(position, Quaternion.identity, Vector3.one * (0.3f * (brickSize + 1))));
                             validity[idxInBatch] = cell.data.validity[probeFlatIndex];
                             dilationThreshold[idxInBatch] =  baseThreshold;
                             texels[idxInBatch] = new Vector4(texelLoc.x, texelLoc.y, texelLoc.z, brickSize);
                             relativeSize[idxInBatch] = (float)brickSize / (float)maxSubdiv;
+
+                            layer[idxInBatch] = Unity.Mathematics.math.asfloat(cell.data.layer.Length > 0 ? cell.data.layer[probeFlatIndex] : 0xFFFFFFFF);
 
                             if (touchupUpVolumeAction != null)
                             {
@@ -1119,10 +1171,9 @@ namespace UnityEngine.Rendering
                                 }
                                 else
                                 {
-                                    var position = cell.data.probePositions[probeFlatIndex] + offset;
                                     var orientation = Quaternion.LookRotation(-offset);
                                     var scale = new Vector3(0.5f, 0.5f, offset.magnitude);
-                                    offsetBuffer.Add(Matrix4x4.TRS(position, orientation, scale));
+                                    offsetBuffer.Add(Matrix4x4.TRS(position + offset, orientation, scale));
                                 }
                             }
                             idxInBatch++;
@@ -1133,6 +1184,7 @@ namespace UnityEngine.Rendering
                                 MaterialPropertyBlock prop = new MaterialPropertyBlock();
 
                                 prop.SetFloatArray("_Validity", validity);
+                                prop.SetFloatArray("_RenderingLayer", layer);
                                 prop.SetFloatArray("_DilationThreshold", dilationThreshold);
                                 prop.SetFloatArray("_TouchupedByVolume", touchupUpVolumeAction);
                                 prop.SetFloatArray("_RelativeSize", relativeSize);
@@ -1144,7 +1196,6 @@ namespace UnityEngine.Rendering
                                 props.Add(prop);
 
                                 probeBuffers.Add(probeBuffer.ToArray());
-                                probeBuffer = new List<Matrix4x4>();
                                 probeBuffer.Clear();
 
                                 offsetBuffers.Add(offsetBuffer.ToArray());

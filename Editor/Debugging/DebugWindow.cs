@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor.Callbacks;
+using UnityEditor.Rendering.Analytics;
 using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.Assertions;
@@ -25,7 +26,19 @@ namespace UnityEditor.Rendering
         // Keep these settings in a separate scriptable object so we can handle undo/redo on them
         // without the rest of the debug window interfering
         public int currentStateHash;
-        public int selectedPanel;
+
+        public int selectedPanel
+        {
+            get => Mathf.Max(0, DebugManager.instance.PanelIndex(selectedPanelDisplayName));
+            set
+            {
+                var displayName = DebugManager.instance.PanelDiplayName(value);
+                if (!string.IsNullOrEmpty(displayName))
+                    selectedPanelDisplayName = displayName;
+            }
+        }
+
+        public string selectedPanelDisplayName;
 
         void OnEnable()
         {
@@ -192,6 +205,8 @@ namespace UnityEditor.Rendering
                 && selectedPanelIndex < panels.Count
                 && panels[selectedPanelIndex].editorForceUpdate)
                 EditorApplication.update += Repaint;
+
+            GraphicsToolLifetimeAnalytic.WindowOpened<DebugWindow>();
         }
 
         // Note: this won't get called if the window is opened when the editor itself is closed
@@ -202,6 +217,11 @@ namespace UnityEditor.Rendering
             Undo.ClearUndo(m_Settings);
 
             DestroyWidgetStates();
+        }
+
+        private void OnDisable()
+        {
+            GraphicsToolLifetimeAnalytic.WindowClosed<DebugWindow>();
         }
 
         public void DestroyWidgetStates()

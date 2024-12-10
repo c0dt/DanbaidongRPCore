@@ -5,17 +5,18 @@
   "unity": "6000.0",
   "displayName": "Danbaidong RP Core Library",
   "dependencies": {
-    "com.unity.mathematics": "1.2.6",
+    "com.unity.burst": "1.8.14",
+    "com.unity.mathematics": "1.3.2",
     "com.unity.ugui": "2.0.0",
-    "com.unity.collections": "2.2.0",
+    "com.unity.collections": "2.4.3",
     "com.unity.modules.physics": "1.0.0",
     "com.unity.modules.terrain": "1.0.0",
     "com.unity.modules.jsonserialize": "1.0.0",
-    "com.unity.rendering.light-transport": "1.0.0"
+    "com.unity.rendering.light-transport": "1.0.1"
   },
   "author": {
     "name": "Danbaidong",
     "url": "https://github.com/danbaidong1111"
   },
-  "_fingerprint": "c3599ddafabf8178387d1deb15a66bf9eedccf06"
+  "_fingerprint": "4341c115a55737d02bfe6e55a2bb526638466bd3"
 }

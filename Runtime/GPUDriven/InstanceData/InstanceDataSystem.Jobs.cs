@@ -379,7 +379,6 @@ namespace UnityEngine.Rendering
         {
             public const int k_BatchSize = 64;
 
-            [ReadOnly] public bool initialize;
             [NativeDisableContainerSafetyRestriction, NoAlias][ReadOnly] public NativeArray<InstanceHandle> instances;
             [NativeDisableParallelForRestriction][NativeDisableContainerSafetyRestriction, NoAlias] public CPUInstanceData instanceData;
             [ReadOnly] public CPUSharedInstanceData sharedInstanceData;
@@ -403,11 +402,6 @@ namespace UnityEngine.Rendering
 
                     int sharedInstanceIndex = sharedInstanceData.InstanceToIndex(instanceData, instance);
                     TransformUpdateFlags flags = sharedInstanceData.flags[sharedInstanceIndex].transformUpdateFlags;
-                    bool isStaticObject = (flags & TransformUpdateFlags.IsPartOfStaticBatch) != 0;
-
-                    if (!initialize && isStaticObject)
-                        continue;
-
                     bool hasLightProbe = (flags & TransformUpdateFlags.HasLightProbeCombined) != 0;
 
                     if (!hasLightProbe)
@@ -717,6 +711,8 @@ namespace UnityEngine.Rendering
                 var gameObjectLayer = rendererData.gameObjectLayer[index];
                 var lightmapIndex = rendererData.lightmapIndex[index];
                 var localAABB = rendererData.localBounds[index].ToAABB();
+                int materialOffset = rendererData.materialsOffset[index];
+                int materialCount = rendererData.materialsCount[index];
 
                 int meshID = rendererData.meshID[meshIndex];
 
@@ -790,7 +786,15 @@ namespace UnityEngine.Rendering
                     SharedInstanceHandle sharedInstance = instanceData.Get_SharedInstance(instance);
                     Assert.IsTrue(sharedInstance.valid);
 
-                    sharedInstanceData.Set(sharedInstance, rendererGroupID, meshID, localAABB, transformUpdateFlags, instanceFlags, lodGroupAndMask, gameObjectLayer,
+                    var materialIDs = new SmallIntegerArray(materialCount, Allocator.Persistent);
+                    for (int i = 0; i < materialCount; i++)
+                    {
+                        int matIndex = rendererData.materialIndex[materialOffset + i];
+                        int materialInstanceID = rendererData.materialID[matIndex];
+                        materialIDs[i] = materialInstanceID;
+                    }
+
+                    sharedInstanceData.Set(sharedInstance, rendererGroupID, materialIDs, meshID, localAABB, transformUpdateFlags, instanceFlags, lodGroupAndMask, gameObjectLayer,
                         sharedInstanceData.Get_RefCount(sharedInstance));
 
                     for (int i = 0; i < instancesCount; ++i)
@@ -966,7 +970,7 @@ namespace UnityEngine.Rendering
                     instanceData.editorData.selectedBits.Set(instanceData.InstanceToIndex(instance), true);
             }
         }
-        
+
 #endif
     }
 }

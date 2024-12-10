@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.IO.LowLevel.Unsafe;
+using Unity.Mathematics;
 using UnityEngine.Serialization;
 
 using CellData = UnityEngine.Rendering.ProbeReferenceVolume.CellData;
@@ -63,6 +64,7 @@ namespace UnityEngine.Rendering
             public int sceneHash;
             public ProbeVolumeStreamableAsset cellDataAsset; // Contains L0 L1 SH data
             public ProbeVolumeStreamableAsset cellOptionalDataAsset; // Contains L2 SH data
+            public ProbeVolumeStreamableAsset cellProbeOcclusionDataAsset; // Contains per-probe occlusion for up to to 4 lights in range [0;1]
 
             bool m_HasValidData;
         }
@@ -128,9 +130,27 @@ namespace UnityEngine.Rendering
         [SerializeField] internal Bounds globalBounds;
         [SerializeField] internal int bakedSimplificationLevels = -1;
         [SerializeField] internal float bakedMinDistanceBetweenProbes = -1.0f;
+        [SerializeField] internal bool bakedProbeOcclusion = false;
         [SerializeField] internal int bakedSkyOcclusionValue = -1;
         [SerializeField] internal int bakedSkyShadingDirectionValue = -1;
         [SerializeField] internal Vector3 bakedProbeOffset = Vector3.zero;
+        [SerializeField] internal int bakedMaskCount = 1;
+        [SerializeField] internal uint4 bakedLayerMasks;
+        [SerializeField] internal int maxSHChunkCount = -1; // Maximum number of SH chunk for a cell in this set.
+        [SerializeField] internal int L0ChunkSize;
+        [SerializeField] internal int L1ChunkSize;
+        [SerializeField] internal int L2TextureChunkSize; // Optional. Size of the chunk for one texture (4 textures for all data)
+        [SerializeField] internal int ProbeOcclusionChunkSize; // Optional. Size of the chunk for one texture
+        [SerializeField] internal int sharedValidityMaskChunkSize; // Shared
+        [SerializeField] internal int sharedSkyOcclusionL0L1ChunkSize; // Shared
+        [SerializeField] internal int sharedSkyShadingDirectionIndicesChunkSize;
+        [SerializeField] internal int sharedDataChunkSize;
+        [SerializeField] internal int supportPositionChunkSize;
+        [SerializeField] internal int supportValidityChunkSize;
+        [SerializeField] internal int supportTouchupChunkSize;
+        [SerializeField] internal int supportLayerMaskChunkSize;
+        [SerializeField] internal int supportOffsetsChunkSize;
+        [SerializeField] internal int supportDataChunkSize;
 
         internal bool bakedSkyOcclusion
         {
@@ -142,20 +162,6 @@ namespace UnityEngine.Rendering
             get => bakedSkyShadingDirectionValue <= 0 ? false : true;
             set => bakedSkyShadingDirectionValue = value ? 1 : 0;
         }
-
-        [SerializeField] internal int maxSHChunkCount = -1; // Maximum number of SH chunk for a cell in this set.
-        [SerializeField] internal int L0ChunkSize;
-        [SerializeField] internal int L1ChunkSize;
-        [SerializeField] internal int L2TextureChunkSize; // Optional. Size of the chunk for one texture (4 textures for all data)
-        [SerializeField] internal int sharedValidityMaskChunkSize; // Shared
-        [SerializeField] internal int sharedSkyOcclusionL0L1ChunkSize; // Shared
-        [SerializeField] internal int sharedSkyShadingDirectionIndicesChunkSize;
-        [SerializeField] internal int sharedDataChunkSize;
-        [SerializeField] internal int supportPositionChunkSize;
-        [SerializeField] internal int supportValidityChunkSize;
-        [SerializeField] internal int supportTouchupChunkSize;
-        [SerializeField] internal int supportOffsetsChunkSize;
-        [SerializeField] internal int supportDataChunkSize;
 
         [SerializeField] internal string lightingScenario = ProbeReferenceVolume.defaultLightingScenario;
         string m_OtherScenario = null;
@@ -257,9 +263,35 @@ namespace UnityEngine.Rendering
         public bool skyOcclusionBackFaceCulling = false;
 
         /// <summary>
-        ///  Bake sky shading direction.
+        /// Bake sky shading direction.
         /// </summary>
         public bool skyOcclusionShadingDirection = false;
+
+        [Serializable]
+        internal struct ProbeLayerMask
+        {
+            public RenderingLayerMask mask;
+            public string name;
+        }
+
+        [SerializeField]
+        internal bool useRenderingLayers = false;
+        [SerializeField]
+        internal ProbeLayerMask[] renderingLayerMasks;
+
+        internal uint4 ComputeRegionMasks()
+        {
+            uint4 masks = 0;
+            if (!useRenderingLayers || renderingLayerMasks == null)
+                masks.x = 0xFFFFFFFF;
+            else
+            {
+                for (int i = 0; i < renderingLayerMasks.Length; i++)
+                    masks[i] = renderingLayerMasks[i].mask;
+
+            }
+            return masks;
+        }
 
         internal static int GetCellSizeInBricks(int simplificationLevels) => (int)Mathf.Pow(3, simplificationLevels);
         internal static int GetMaxSubdivision(int simplificationLevels) => simplificationLevels + 1; // we add one for the top subdiv level which is the same size as a cell
@@ -340,6 +372,17 @@ namespace UnityEngine.Rendering
 #endif
         }
 
+        // Return true if baking settings are incompatible with already baked data
+        internal bool CheckCompatibleCellLayout()
+        {
+            return simplificationLevels == bakedSimplificationLevels &&
+                minDistanceBetweenProbes == bakedMinDistanceBetweenProbes &&
+                skyOcclusion == bakedSkyOcclusion &&
+                skyOcclusionShadingDirection == bakedSkyShadingDirection &&
+                settings.virtualOffsetSettings.useVirtualOffset == (supportOffsetsChunkSize != 0) &&
+                useRenderingLayers == (bakedMaskCount != 1);
+        }
+
         bool ComputeHasSupportData()
         {
             return cellSupportDataAsset != null && cellSupportDataAsset.IsValid() && cellSupportDataAsset.FileExists();
@@ -352,6 +395,21 @@ namespace UnityEngine.Rendering
 #else
             return m_HasSupportData;
 #endif
+        }
+
+        /// <summary>
+        /// Tests if the baking set data has already been baked.
+        /// </summary>
+        /// <param name="scenario">The name of the scenario to test. If null or if scenarios are disabled, the function will test for the default scenario.</param>
+        /// <returns>True if the baking set data has been baked.</returns>
+        public bool HasBakedData(string scenario = null)
+        {
+            if (scenario == null)
+                return scenarios.ContainsKey(ProbeReferenceVolume.defaultLightingScenario);
+
+            if (!ProbeReferenceVolume.instance.supportLightingScenarios && scenario != ProbeReferenceVolume.defaultLightingScenario)
+                return false;
+            return scenarios.ContainsKey(scenario);
         }
 
         /// <summary>Called after deserializing</summary>
@@ -446,6 +504,7 @@ namespace UnityEngine.Rendering
                     {
                         scenario.Value.cellDataAsset.Dispose();
                         scenario.Value.cellOptionalDataAsset.Dispose();
+                        scenario.Value.cellProbeOcclusionDataAsset.Dispose();
                     }
                 }
             }
@@ -802,22 +861,29 @@ namespace UnityEngine.Rendering
                 {
                     var sourcePositions = cellSupportData.GetSubArray(supportDataChunkOffset, shChunkCount * supportPositionChunkSize).Reinterpret<Vector3>(1);
                     supportDataChunkOffset += shChunkCount * supportPositionChunkSize;
+                    cellData.probePositions = m_UseStreamingAsset ? new NativeArray<Vector3>(sourcePositions, Allocator.Persistent) : sourcePositions;
+
                     var sourceValidity = cellSupportData.GetSubArray(supportDataChunkOffset, shChunkCount * supportValidityChunkSize).Reinterpret<float>(1);
                     supportDataChunkOffset += shChunkCount * supportValidityChunkSize;
+                    cellData.validity = m_UseStreamingAsset ? new NativeArray<float>(sourceValidity, Allocator.Persistent) : sourceValidity;
+
                     var sourceTouchup = cellSupportData.GetSubArray(supportDataChunkOffset, shChunkCount * supportTouchupChunkSize).Reinterpret<float>(1);
                     supportDataChunkOffset += shChunkCount * supportTouchupChunkSize;
-                    var sourceOffsetVectors = default(NativeArray<Vector3>);
-                    if (supportOffsetsChunkSize != 0)
-                        sourceOffsetVectors = cellSupportData.GetSubArray(supportDataChunkOffset, shChunkCount * supportOffsetsChunkSize).Reinterpret<Vector3>(1);
-                    supportDataChunkOffset += shChunkCount * supportOffsetsChunkSize;
-
-                    cellData.probePositions = m_UseStreamingAsset ? new NativeArray<Vector3>(sourcePositions, Allocator.Persistent) : sourcePositions;
-                    cellData.validity = m_UseStreamingAsset ? new NativeArray<float>(sourceValidity, Allocator.Persistent) : sourceValidity;
                     cellData.touchupVolumeInteraction = m_UseStreamingAsset ? new NativeArray<float>(sourceTouchup, Allocator.Persistent) : sourceTouchup;
+
+                    if (supportLayerMaskChunkSize != 0)
+                    {
+                        var sourceLayer = cellSupportData.GetSubArray(supportDataChunkOffset, shChunkCount * supportLayerMaskChunkSize).Reinterpret<byte>(1);
+                        supportDataChunkOffset += shChunkCount * supportLayerMaskChunkSize;
+                        cellData.layer = m_UseStreamingAsset ? new NativeArray<byte>(sourceLayer, Allocator.Persistent) : sourceLayer;
+                    }
+
                     if (supportOffsetsChunkSize != 0)
+                    {
+                        var sourceOffsetVectors = cellSupportData.GetSubArray(supportDataChunkOffset, shChunkCount * supportOffsetsChunkSize).Reinterpret<Vector3>(1);
+                        supportDataChunkOffset += shChunkCount * supportOffsetsChunkSize;
                         cellData.offsetVectors = m_UseStreamingAsset ? new NativeArray<Vector3>(sourceOffsetVectors, Allocator.Persistent) : sourceOffsetVectors;
-                    else
-                        cellData.offsetVectors = default;
+                    }
                 }
 
                 cellDataMap.Add(cellIndex, cellData);
@@ -879,7 +945,8 @@ namespace UnityEngine.Rendering
 
                 var cellData = LoadStreambleAssetData<byte>(data.cellDataAsset, m_PrunedScenarioIndexList);
                 var cellOptionalData = shUseL2 ? LoadStreambleAssetData<byte>(data.cellOptionalDataAsset, m_PrunedScenarioIndexList) : default;
-                if (!ResolvePerScenarioCellData(cellData, cellOptionalData, name, m_PrunedScenarioIndexList))
+                var cellProbeOcclusionData = bakedProbeOcclusion ? LoadStreambleAssetData<byte>(data.cellProbeOcclusionDataAsset, m_PrunedScenarioIndexList) : default;
+                if (!ResolvePerScenarioCellData(cellData, cellOptionalData, cellProbeOcclusionData, name, m_PrunedScenarioIndexList))
                 {
                     Debug.LogError($"Baked data for scenario '{name}' cannot be loaded.");
                     return false;
@@ -888,12 +955,14 @@ namespace UnityEngine.Rendering
                 ReleaseStreamableAssetData(cellData);
                 if (shUseL2)
                     ReleaseStreamableAssetData(cellOptionalData);
+                if (bakedProbeOcclusion)
+                    ReleaseStreamableAssetData(cellProbeOcclusionData);
             }
 
             return true;
         }
 
-        internal bool ResolvePerScenarioCellData(NativeArray<byte> cellData, NativeArray<byte> cellOptionalData, string scenario, List<int> cellIndices)
+        internal bool ResolvePerScenarioCellData(NativeArray<byte> cellData, NativeArray<byte> cellOptionalData, NativeArray<byte> cellProbeOcclusionData, string scenario, List<int> cellIndices)
         {
             Debug.Assert(!ProbeReferenceVolume.instance.diskStreamingEnabled);
 
@@ -903,8 +972,11 @@ namespace UnityEngine.Rendering
             // Optional L2 data
             var hasOptionalData = cellOptionalData.IsCreated;
 
+            var hasProbeOcclusionData = cellProbeOcclusionData.IsCreated && cellProbeOcclusionData.Length > 0;
+
             var chunkOffsetL0L1 = 0;
             var chunkOffsetL2 = 0;
+            var chunkOffsetProbeOcclusion = 0;
 
             for (var i = 0; i < cellIndices.Count; ++i)
             {
@@ -938,8 +1010,16 @@ namespace UnityEngine.Rendering
                     cellState.shL2Data_3 = m_UseStreamingAsset ? new NativeArray<byte>(sourceShL2Data_3, Allocator.Persistent) : sourceShL2Data_3;
                 }
 
+                if (hasProbeOcclusionData)
+                {
+                    var sourceProbeOcclusionDataSource = cellProbeOcclusionData.GetSubArray(chunkOffsetProbeOcclusion, ProbeOcclusionChunkSize * shChunkCount);
+
+                    cellState.probeOcclusion = m_UseStreamingAsset ? new NativeArray<byte>(sourceProbeOcclusionDataSource, Allocator.Persistent) : sourceProbeOcclusionDataSource;
+                }
+
                 chunkOffsetL0L1 += (L0ChunkSize + 2 * L1ChunkSize) * shChunkCount;
                 chunkOffsetL2 += (L2TextureChunkSize * 4) * shChunkCount;
+                chunkOffsetProbeOcclusion += ProbeOcclusionChunkSize * shChunkCount;
 
                 cell.scenarios.Add(scenario, cellState);
             }
@@ -978,6 +1058,10 @@ namespace UnityEngine.Rendering
             // 4 Optional L2 Chunks
             if (shBands == ProbeVolumeSHBands.SphericalHarmonicsL2)
                 size += 4 * L2TextureChunkSize;
+
+            // Optional probe occlusion
+            if (bakedProbeOcclusion)
+                size += ProbeOcclusionChunkSize;
 
             return size;
         }

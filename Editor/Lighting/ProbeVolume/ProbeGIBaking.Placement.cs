@@ -113,7 +113,7 @@ namespace UnityEngine.Rendering
             if (!ProbeReferenceVolume.instance.supportLightingScenarios)
                 return false;
 
-            // Check if all the scene datas in the scene have a baking set, if  not then we cannot enable this option.
+            // Check if all the scene datas in the scene have a baking set, if not then we cannot enable this option.
             var sceneDataList = GetPerSceneDataList();
             if (sceneDataList.Count == 0)
                 return false;
@@ -127,7 +127,7 @@ namespace UnityEngine.Rendering
             return true;
         }
 
-        static NativeList<Vector3> RunPlacement()
+        static NativeList<Vector3> RunPlacement(ref bool canceledByUser)
         {
             // Overwrite loaded settings with data from profile. Note that the m_BakingSet.profile is already patched up if isFreezingPlacement
             float prevBrickSize = ProbeReferenceVolume.instance.MinBrickSize();
@@ -142,12 +142,15 @@ namespace UnityEngine.Rendering
             // Run subdivision
             ProbeSubdivisionResult result;
             using (new BakingSetupProfiling(BakingSetupProfiling.Stages.BakeBricks))
-                result = GetWorldSubdivision();
+                result = GetWorldSubdivision(ref canceledByUser);
+
+            if (canceledByUser)
+                return new NativeList<Vector3>(Allocator.Temp);
 
             // Compute probe positions
             NativeList<Vector3> positions;
             using (new BakingSetupProfiling(BakingSetupProfiling.Stages.ApplySubdivisionResults))
-                positions = ApplySubdivisionResults(result);
+                positions = ApplySubdivisionResults(result, ref canceledByUser);
 
             // Restore loaded asset settings
             ProbeReferenceVolume.instance.SetSubdivisionDimensions(prevBrickSize, prevMaxSubdiv, prevOffset);
@@ -155,31 +158,36 @@ namespace UnityEngine.Rendering
             return positions;
         }
 
-        static ProbeSubdivisionResult GetWorldSubdivision()
+        static ProbeSubdivisionResult GetWorldSubdivision(ref bool canceledByUser)
         {
             if (isFreezingPlacement)
                 return GetBricksFromLoaded();
 
             var ctx = PrepareProbeSubdivisionContext();
-            return BakeBricks(ctx, m_BakingBatch.contributors);
+            return BakeBricks(ctx, m_BakingBatch.contributors, ref canceledByUser);
         }
 
-        static NativeList<Vector3> ApplySubdivisionResults(ProbeSubdivisionResult results)
+        static NativeList<Vector3> ApplySubdivisionResults(ProbeSubdivisionResult results, ref bool canceledByUser)
         {
-            int cellIdx = 0, freq = 10; // Don't refresh progress bar at every iteration because it's slow
+            int cellIdx = 0, freq = 10;
             BakingSetupProfiling.GetProgressRange(out float progress0, out float progress1);
 
             var positions = new NativeList<Vector3>(Allocator.Persistent);
-            Dictionary<int, int> positionToIndex = new();
             foreach ((var position, var bounds, var bricks) in results.cells)
             {
-                if (++cellIdx % freq == 0)
-                    EditorUtility.DisplayProgressBar("Baking Probe Volumes", $"Subdividing cell {cellIdx} out of {results.cells.Count}", Mathf.Lerp(progress0, progress1, cellIdx / (float)results.cells.Count));
+                if (cellIdx++ % freq == 0) // Don't refresh progress bar at every iteration because it's slow
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar("Baking Probe Volumes", $"Subdividing cell {cellIdx} out of {results.cells.Count}", Mathf.Lerp(progress0, progress1, cellIdx / (float)results.cells.Count)))
+                    {
+                        canceledByUser = true;
+                        return positions;
+                    }
+                }
 
                 int positionStart = positions.Length;
 
                 ConvertBricksToPositions(bricks, out var probePositions, out var brickSubdivLevels);
-                DeduplicateProbePositions(in probePositions, in brickSubdivLevels, positionToIndex, m_BakingBatch, positions, out var probeIndices);
+                DeduplicateProbePositions(in probePositions, in brickSubdivLevels, m_BakingBatch, positions, out var probeIndices);
 
                 BakingCell cell = new BakingCell()
                 {
@@ -198,11 +206,11 @@ namespace UnityEngine.Rendering
             return positions;
         }
 
-        private static void DeduplicateProbePositions(in Vector3[] probePositions, in int[] brickSubdivLevel, Dictionary<int, int> positionToIndex, BakingBatch batch,
+        private static void DeduplicateProbePositions(in Vector3[] probePositions, in int[] brickSubdivLevel, BakingBatch batch,
             NativeList<Vector3> uniquePositions, out int[] indices)
         {
             indices = new int[probePositions.Length];
-            int uniqueIndex = positionToIndex.Count;
+            int uniqueIndex = batch.positionToIndex.Count;
 
             for (int i = 0; i < probePositions.Length; i++)
             {
@@ -210,7 +218,7 @@ namespace UnityEngine.Rendering
                 var brickSubdiv = brickSubdivLevel[i];
                 int probeHash = batch.GetProbePositionHash(pos);
 
-                if (positionToIndex.TryGetValue(probeHash, out var index))
+                if (batch.positionToIndex.TryGetValue(probeHash, out var index))
                 {
                     indices[i] = index;
                     int oldBrickLevel = batch.uniqueBrickSubdiv[probeHash];
@@ -219,7 +227,7 @@ namespace UnityEngine.Rendering
                 }
                 else
                 {
-                    positionToIndex[probeHash] = uniqueIndex;
+                    batch.positionToIndex[probeHash] = uniqueIndex;
                     indices[i] = uniqueIndex;
                     batch.uniqueBrickSubdiv[probeHash] = brickSubdiv;
                     uniquePositions.Add(pos);
@@ -283,18 +291,30 @@ namespace UnityEngine.Rendering
             return ctx;
         }
 
-        static internal ProbeSubdivisionResult BakeBricks(ProbeSubdivisionContext ctx, in GIContributors contributors)
+        static internal ProbeSubdivisionResult BakeBricks(ProbeSubdivisionContext ctx, in GIContributors contributors, ref bool canceledByUser)
         {
             var result = new ProbeSubdivisionResult();
 
             if (ctx.probeVolumes.Count == 0)
                 return result;
 
+            int cellIdx = 0, freq = 100;
+            BakingSetupProfiling.GetProgressRange(out float progress0, out float progress1);
+
             using (var gpuResources = ProbePlacement.AllocateGPUResources(ctx.probeVolumes.Count, ctx.profile))
             {
                 // subdivide all the cells and generate brick positions
                 foreach (var cell in ctx.cells)
                 {
+                    if (cellIdx++ % freq == 0)  // Don't refresh progress bar at every iteration because it's slow
+                    {
+                        if (EditorUtility.DisplayCancelableProgressBar("Generating Probe Volume Bricks", $"Processing cell {cellIdx} out of {ctx.cells.Count}", Mathf.Lerp(progress0, progress1, cellIdx / (float)ctx.cells.Count)))
+                        {
+                            canceledByUser = true;
+                            return new ProbeSubdivisionResult();
+                        }
+                    }
+
                     var scenesInCell = new HashSet<string>();
 
                     // Calculate overlaping probe volumes to avoid unnecessary work
@@ -314,7 +334,7 @@ namespace UnityEngine.Rendering
                     if (filteredContributors.Count == 0 && !overlappingProbeVolumes.Any(v => v.component.fillEmptySpaces))
                         continue;
 
-                    var bricks = ProbePlacement.SubdivideCell(cell.bounds, ctx, gpuResources, filteredContributors, overlappingProbeVolumes);
+                    var bricks = ProbePlacement.SubdivideCell(cell.position, cell.bounds, ctx, gpuResources, filteredContributors, overlappingProbeVolumes);
                     if (bricks.Length == 0)
                         continue;
 

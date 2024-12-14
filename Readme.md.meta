@@ -1,11 +1,6 @@
 fileFormatVersion: 2
-<<<<<<<< HEAD:Readme.md.meta
 guid: db31e31c9f8817d4a8e83fe702fd1266
 TextScriptImporter:
-========
-guid: 8ba6ac699baf35242857feaf27c9cc2a
-ComputeShaderImporter:
->>>>>>>> 16bd506 (upgrade 6000.0.0f1to 6000.0.30f1.):Tests/Editor/BufferCopyTest.compute.meta
   externalObjects: {}
   userData: 
   assetBundleName: 
